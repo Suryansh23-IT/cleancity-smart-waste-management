@@ -1,0 +1,31 @@
+# Secrets, including device TLS material
+.env
+.env.*
+!.env.example
+secrets/
+**/secrets.h
+**/secrets.local.h
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+.aws/
+
+# Generated dependencies/builds
+node_modules/
+dist/
+coverage/
+.pio/
+build/
+*.bin
+*.elf
+*.map
+*.log
+__pycache__/
+
+# Machine-specific files
+.DS_Store
+Thumbs.db
+.idea/
