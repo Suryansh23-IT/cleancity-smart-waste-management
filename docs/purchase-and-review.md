@@ -32,7 +32,13 @@ Sources: [Espressif DevKitC V4 guide](https://docs.espressif.com/projects/esp-de
 | Multimeter with probes | Borrow from college, or buy if borrowing unavailable | Required access before new-circuit power-on; arrange a lab technician |
 | Ruler, labels, ties, insulation | 1 small set | Heat-shrink is optional for suitably insulated extensions, not a substitute for firm contacts |
 | Trial dustbin and removable support | 1 first, then six matching bins | Sensor fit and repeatable readings must be proven before permanent model construction |
-| Model materials and toy trucks | As planned | Keep sensor supports, bins and electronics removable |
+| Miniature bins | 6 total | Validate one trial bin before permanent mounting; match the approved dimensions across all six |
+| Manually moved toy trucks | 2 | No motors, driver boards, GPS or batteries required for truck automation |
+| Model materials | As planned | Keep sensor supports, bins and electronics removable |
+
+Shop handover: ask for a full-size, pre-soldered ESP32-WROOM-32E dev board with at least 4MB flash and onboard PCB antenna; a documented WROOM-32/32D dev board is an acceptable fallback subject to exact-board review. USB-C preferred, matching data cable essential. Confirm the actual module AND development-board model/revision, USB connector, USB-UART chip marking (CP210x/CH340/CH341 or other documented chip), readable pinout/schematic and at least six usable output GPIOs plus six separate input GPIOs after excluding reserved pins. Header count alone does not establish usable GPIO count. If choosing S3, identify native USB versus USB-UART ports explicitly. Do not install drivers at the shop from an unknown download.
+
+Check the board physically fits the breadboard with accessible connection holes; do not force pin rows to fit. For wires, a practical approximately 80-piece assortment is 40 M-F, 30 M-M and 10 F-F, including the required longer lengths, with firm connectors and intact insulation. HC-SR04 has male headers, so female ends are needed at the sensors. Take board/sensor photos, seller details and a receipt before leaving. Keep all final GPIO assignments and power wiring pending actual-board review. No circuit assembly or sensor power-on today.
 
 Six nominal 15mA sensors total about 90mA; ESP32 Wi-Fi adds transient demand. This is a preliminary estimate, not measured power approval. Start with short wires and one sensor; evaluate power path and voltage again at three/six and with Wi-Fi.
 

@@ -17,7 +17,9 @@ Use Arduino IDE 2 and Espressif's Arduino-ESP32 package for M0; no extra sensor 
 
 Official installation reference: [Espressif Arduino installation](https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html).
 
-No Arduino CLI or PlatformIO executable was found in PATH during preparation. Board support installation, real compilation and upload are pending; source preparation is not a working toolchain claim.
+Pre-M0 installation status (user-confirmed): Arduino IDE 2.3.10 and the official **esp32 by Espressif Systems v3.3.12** installed successfully with no installation errors. Keep these versions fixed unless troubleshooting requires a change. Installation success does not verify compilation, upload or hardware operation.
+
+Exact board selection, board-specific USB driver assessment, GPIO mapping, compilation and upload remain pending. No Arduino CLI or PlatformIO executable was found in PATH during the earlier environment check; neither is required for the Arduino IDE workflow. No additional sensor library is required for the first-sensor sketch.
 
 ## One-sensor connection template: NOT approved until board review
 
