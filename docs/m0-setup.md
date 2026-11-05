@@ -1,8 +1,12 @@
+> Current authority: Final Master Execution Prompt v1.0. Four physical bins; independent municipal simulator; Vercel + Supabase; AWS on hold. ESP32 operation is owner-reported as working. HC-SR04 testing is paused pending experienced assistance. The older M0/day-wise/USB-only/AWS procedure below is retained as historical preparation; current architecture/checkpoints are in README.md and docs/roadmap.md. Electrical safety requirements remain active. No pin mapping or upload is authorized by these notes.
+
 # M0: first sensor preparation
 
 ## Before plugging in the board
 
-Buy/identify the actual board. Send clear front/back photos, module marking, board model/revision, power pin labels and seller schematic/link. Also report sensor label/pin order, bin internal depth/opening, intended wire lengths and multimeter/technician availability. Do not connect sensors yet. GPIOs remain unassigned until review.
+Purchased board reported on 4 November: ESP32-WROOM family, 30-pin, Micro-USB, apparently CP2102. This is preliminary identification, not a verified pinout. Confirm front/back markings, exact board/revision, soldered headers and documented power pins before wiring. Report sensor labels, bin dimensions and meter/technician availability. GPIOs remain unassigned.
+
+Immediate next task only: with no sensors, jumpers, breadboard or external supply attached, put the undamaged board on a dry nonconductive surface and connect its Micro-USB cable to Windows. Compare Device Manager before/after connection. Record the new COM port name/number or the unknown-device entry. COM detection does not prove firmware upload or sensor operation. Do not install drivers blindly; identify the device/hardware ID if detection fails. Basic serial-test implementation/upload will be a later explicitly instructed step.
 
 ## Toolchain
 
@@ -30,11 +34,13 @@ Do not perform this connection step until we replace the placeholders with the e
 | HC-SR04 VCC | Board's verified USB-derived 5V output (only if documented and approved) |
 | HC-SR04 GND | Breadboard common GND connected to board GND |
 | HC-SR04 TRIG | Approved output-capable GPIO, currently UNASSIGNED |
-| HC-SR04 ECHO | 2.2k resistor, other end to divider junction |
+| HC-SR04 ECHO | Verified upper divider network, selection/review pending |
 | Divider junction | Approved input GPIO, currently UNASSIGNED |
-| Divider junction | 3.3k resistor, other end to common GND |
+| Divider junction | Verified lower divider network to common GND, selection/review pending |
 
 The GPIO receives only the junction voltage, never the unprotected Echo. See the purchase review for breadboard groups, rail splits and safe meter use.
+
+Only ten reportedly 2k resistors were purchased; 2.2k/3.3k components are not available by assumption. See the updated resistor assessment in the purchase review before choosing a divider. This table is not permission to assemble or energize a circuit.
 
 After unpowered checks and supervised voltage verification, enter the approved numeric GPIOs and set `WIRING_REVIEWED = true` in the sketch. This flag documents a human review; software cannot detect a wrong wire. Uploading with the wrong settings is not safe merely because compilation succeeds.
 
@@ -46,7 +52,7 @@ Then test the trial bin empty, partially filled and near its chosen full line. K
 
 Expected serial output after enabling: one JSON distance record per second, valid or explicit invalid status. This raw sketch deliberately has no calibrated fill percentages, filtering, alert logic, Wi-Fi or cloud features; those belong to M1/M2.
 
-Report exact board/core version, configured GPIOs, wiring-review result, ruler distances and serial readings. M0 passes only after actual plausible repeatable measurements, including the trial-bin and failure cases. Do not add three/six sensors yet.
+Report exact board/core version, configured GPIOs, wiring-review result, ruler distances and serial readings. M0 passes only after actual plausible repeatable measurements, including the trial-bin and failure cases. Do not expand to two/four sensors until the preceding gate passes.
 
 ## Debug in this order
 
