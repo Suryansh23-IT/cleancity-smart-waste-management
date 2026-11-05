@@ -1899,3 +1899,91 @@ fieldset:disabled {
     max-width: 100%;
   }
 }
+
+/* Urban map: land parcels, connected road surfaces and restrained operational glyphs. */
+.urban-map > svg {
+  background: #e9f0e5;
+}
+.urban-map .map-road-label,
+.urban-map .depot-label {
+  font-family: inherit;
+  font-size: 11px;
+  fill: #3e5f51;
+  paint-order: stroke;
+  stroke: #fffefa;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  font-weight: 600;
+  pointer-events: none;
+}
+.urban-map .depot-label {
+  font-size: 12px;
+}
+.urban-map .map-bin > circle {
+  filter: drop-shadow(0 1px 1px #214b3320);
+}
+.urban-map .map-bin:hover > circle,
+.urban-map .map-node:hover > circle {
+  stroke: #135e4a;
+  stroke-width: 3px;
+}
+.urban-map .map-legend {
+  font-size: 10px;
+}
+.urban-map .map-node:focus-visible,
+.urban-map .map-bin:focus-visible {
+  outline: 2px solid #2364a7;
+}
+.urban-map .street-surfaces path,
+.urban-map .street-casings path {
+  pointer-events: none;
+}
+.simulation-map .map-bin {
+  opacity: 0.9;
+}
+.city-view-map .map-node,
+.simulation-map .map-node {
+  cursor: pointer;
+}
+.urban-map .canvas-label {
+  background: #ffffffed;
+  padding: 5px 9px;
+  border-radius: 20px;
+  top: 10px;
+  left: 14px;
+}
+@media (max-width: 700px) {
+  .urban-map .depot-label {
+    font-size: 14px;
+  }
+  .urban-map .map-legend {
+    font-size: 9px;
+  }
+  .studio-workspace .urban-map,
+  .urban-map {
+    height: 440px;
+  }
+  .urban-map .zoom input {
+    width: 110px;
+  }
+  .urban-map .zoom {
+    left: 12px;
+    max-width: calc(100% - 24px);
+  }
+}
+
+.urban-map .depot-label {
+  font-size: 14px;
+}
+.urban-map {
+  height: 650px;
+}
+.urban-map .map-bin > circle {
+  vector-effect: non-scaling-stroke;
+}
+@media (max-width: 700px) {
+  .studio-workspace .urban-map,
+  .urban-map {
+    height: 440px;
+  }
+}

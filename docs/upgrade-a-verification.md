@@ -1,5 +1,7 @@
 # Upgrade A — City Studio and map verification
 
+Follow-up: [the focused municipal map visual refinement](map-visual-refinement.md) records the subsequent road/land/marker rendering upgrade, 75-test verification and desktop/mobile screenshot evidence. The results below remain the historical Upgrade A checkpoint record.
+
 Implemented from `ca8893b` on `codex/municipal-platform`, 5 November 2026, under the separate Upgrade A implementation brief. The original audit and all 26 recommendations remain preserved. This record supplements the planning-only roadmap; it does not authorize B or C.
 
 ## Delivered scope

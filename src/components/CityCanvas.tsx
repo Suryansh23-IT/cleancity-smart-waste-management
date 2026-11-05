@@ -1,32 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { screenToWorld, panCamera } from "../core/camera";
 import { City, status } from "../core/model";
 import { Plan } from "../core/routing";
 import { Simulation, tripState, currentTrip } from "../core/simulation";
+import MapSurface from "./MapSurface";
+import { hull, streetsFor, binLayout } from "./mapGeometry";
 export interface Selection {
   kind: "node" | "road" | "bin" | "zone" | "truck";
   id: string;
 }
 type Point = { x: number; y: number };
-function hull(points: Point[]): Point[] {
-  const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
-  if (p.length < 3) return p;
-  const cross = (o: Point, a: Point, b: Point) =>
-      (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x),
-    lower: Point[] = [],
-    upper: Point[] = [];
-  for (const pt of p) {
-    while (lower.length >= 2 && cross(lower.at(-2)!, lower.at(-1)!, pt) <= 0)
-      lower.pop();
-    lower.push(pt);
-  }
-  for (const pt of p.reverse()) {
-    while (upper.length >= 2 && cross(upper.at(-2)!, upper.at(-1)!, pt) <= 0)
-      upper.pop();
-    upper.push(pt);
-  }
-  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
-}
 export default function CityCanvas({
   city,
   plan,
@@ -56,6 +39,20 @@ export default function CityCanvas({
       point: Point;
     } | null>(null),
     [zoom, setZoom] = useState(1);
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const initiallyFitted = useRef(false);
+  const worldWidth = viewport.height
+    ? (city.height * viewport.width) / viewport.height
+    : city.width;
+  useEffect(() => {
+    if (!ref.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width && height) setViewport({ width, height });
+    });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
   const [offset, setOffset] = useState({ x: 0, y: 0 }),
     [pan, setPan] = useState<{
       x: number;
@@ -78,7 +75,7 @@ export default function CityCanvas({
   const fit = () => {
     const pts = [
       ...city.nodes,
-      ...city.bins.flatMap((b) => (b.position ? [b.position] : [])),
+      ...binLayout(city, (id) => city.nodes.find((n) => n.id === id)!).values(),
     ];
     if (!pts.length) {
       reset();
@@ -86,21 +83,49 @@ export default function CityCanvas({
     }
     const xs = pts.map((p) => p.x),
       ys = pts.map((p) => p.y),
-      left = Math.min(...xs) - 65,
-      right = Math.max(...xs) + 65,
-      top = Math.min(...ys) - 80,
-      bottom = Math.max(...ys) + 65;
-    setZoom(
-      Math.max(
-        0.3,
-        Math.min(5, city.width / (right - left), city.height / (bottom - top)),
+      left = Math.min(...xs) - 28,
+      right = Math.max(...xs) + 50,
+      top = Math.min(...ys) - 30,
+      bottom = Math.max(...ys) + 38;
+    const w = viewport.width || 1100,
+      h = viewport.height || 720;
+    const wrap = ref.current?.parentElement,
+      svgTop = ref.current?.getBoundingClientRect().top ?? 0;
+    const controls = wrap
+      ?.querySelector(".map-layers summary")
+      ?.getBoundingClientRect();
+    const legend = wrap?.querySelector(".map-legend")?.getBoundingClientRect();
+    const topSpace = Math.max(
+      120,
+      controls ? controls.bottom - svgTop + 15 : 120,
+    );
+    const bottomSpace = Math.max(
+      w < 500 ? 110 : 55,
+      (legend?.height ?? 30) + 26,
+    );
+    const nextZoom = Math.max(
+      0.3,
+      Math.min(
+        5,
+        (worldWidth * Math.max(0.5, (w - 64) / w)) / (right - left),
+        (city.height * Math.max(0.15, (h - topSpace - bottomSpace) / h)) /
+          (bottom - top),
       ),
     );
+    setZoom(nextZoom);
     setOffset({
       x: (left + right - city.width) / 2,
-      y: (top + bottom - city.height) / 2,
+      y:
+        (top + bottom - city.height) / 2 -
+        (((topSpace - bottomSpace) / 2) * city.height) / nextZoom / h,
     });
   };
+  useEffect(() => {
+    if (viewport.width && !initiallyFitted.current) {
+      fit();
+      initiallyFitted.current = true;
+    }
+  }, [viewport.width, viewport.height]);
   useEffect(() => {
     const svg = ref.current;
     if (!svg) return;
@@ -158,8 +183,18 @@ export default function CityCanvas({
   const nodes = new Map(city.nodes.map((n) => [n.id, n]));
   const point = (id: string) =>
     drag?.kind === "node" && drag.id === id ? drag.point : nodes.get(id)!;
+  const streets = useMemo(
+    () => streetsFor(city, point),
+    [city.nodes, city.roads, drag?.kind === "node" ? drag : null],
+  );
+  const binPositions = useMemo(
+    () => binLayout(city, point),
+    [city.nodes, city.bins, drag?.kind === "node" ? drag : null],
+  );
   return (
-    <div className="canvas-wrap">
+    <div
+      className={`canvas-wrap urban-map ${editing ? "engineering-map" : simulationView ? "simulation-map" : "city-view-map"}`}
+    >
       <div className="canvas-label">
         <span className="live-dot" /> {city.name}{" "}
         <span className="pill">SIMULATED</span>
@@ -229,7 +264,7 @@ export default function CityCanvas({
         role="group"
         aria-label="Interactive directed city road network"
         tabIndex={0}
-        viewBox={`${(city.width * (1 - 1 / zoom)) / 2 + offset.x} ${(city.height * (1 - 1 / zoom)) / 2 + offset.y} ${city.width / zoom} ${city.height / zoom}`}
+        viewBox={`${city.width / 2 + offset.x - worldWidth / zoom / 2} ${(city.height * (1 - 1 / zoom)) / 2 + offset.y} ${worldWidth / zoom} ${city.height / zoom}`}
         onKeyDown={(e) => {
           if (e.target !== ref.current) return;
           if (e.key === "Home") fit();
@@ -295,64 +330,7 @@ export default function CityCanvas({
           setPan(null);
         }}
       >
-        <defs>
-          <pattern
-            id="grid"
-            width="28"
-            height="28"
-            patternUnits="userSpaceOnUse"
-          >
-            <circle cx="1" cy="1" r=".8" fill="#cbd5df" />
-          </pattern>
-          <marker
-            id="arrow"
-            markerUnits="userSpaceOnUse"
-            markerWidth="7"
-            markerHeight="7"
-            refX="7"
-            refY="3.5"
-            orient="auto"
-          >
-            <path d="M0,0 L7,3.5 L0,7" fill="#778799" />
-          </marker>
-        </defs>
-        <rect
-          width={city.width}
-          height={city.height}
-          fill="url(#grid)"
-          pointerEvents="none"
-        />
-        {layers.context &&
-          city.nodes
-            .filter((n) => n.type === "HEAD")
-            .map((n, i) => (
-              <g key={`district-${n.id}`} pointerEvents="none">
-                <rect
-                  x={n.x - 105}
-                  y={n.y + 25}
-                  width="70"
-                  height="38"
-                  rx="14"
-                  fill="#c9ddc1"
-                  opacity=".6"
-                />
-                <path
-                  d={`M${n.x + 45},${n.y - 45} l40,12 l-9,25 l-40,-12 Z`}
-                  fill="#dfe5e2"
-                />
-                <ellipse
-                  cx={n.x}
-                  cy={n.y}
-                  rx="130"
-                  ry="90"
-                  fill={i % 2 ? "#e7eee3" : "#e5eef0"}
-                  opacity=".45"
-                />
-                <text x={n.x - 85} y={n.y - 60} fill="#597264" fontSize="13">
-                  {n.label} · district context
-                </text>
-              </g>
-            ))}
+        <MapSurface city={city} streets={streets} context={layers.context} />
         {layers.zones &&
           city.zones.map((z) => {
             const points = hull(
@@ -363,120 +341,183 @@ export default function CityCanvas({
                 key={z.id}
                 points={points.map((p) => `${p.x},${p.y}`).join(" ")}
                 fill={z.color}
-                fillOpacity=".055"
+                fillOpacity=".07"
                 stroke={z.color}
-                strokeOpacity=".25"
-                strokeWidth="2"
-                strokeDasharray="7 7"
+                strokeOpacity=".17"
+                strokeWidth="1.5"
+                strokeDasharray="5 7"
                 pointerEvents="none"
               />
             ) : null;
           })}
-        {city.roads.map((r) => {
-          const a = point(r.fromNodeId),
-            b = point(r.toNodeId);
-          if (!a || !b) return null;
-          const dx = b.x - a.x,
-            dy = b.y - a.y,
-            len = Math.hypot(dx, dy) || 1,
-            off = 4,
-            startRadius =
-              nodes.get(r.fromNodeId)?.type === "HEAD" ? 15 : editing ? 7 : 0,
-            endRadius =
-              nodes.get(r.toNodeId)?.type === "HEAD" ? 15 : editing ? 7 : 0;
-          const x1 = a.x - (dy / len) * off + (dx / len) * startRadius,
-            y1 = a.y + (dx / len) * off + (dy / len) * startRadius,
-            x2 = b.x - (dy / len) * off - (dx / len) * endRadius,
-            y2 = b.y + (dx / len) * off - (dy / len) * endRadius;
-          return (
-            <g
-              key={r.id}
-              onClick={() => onSelect({ kind: "road", id: r.id })}
-              className="road"
-              tabIndex={0}
-              role="button"
-              aria-label={`Road ${r.fromNodeId} to ${r.toNodeId}, ${r.distanceKm} km`}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onSelect({ kind: "road", id: r.id });
-              }}
-            >
-              <line
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke="#fff"
-                strokeWidth={r.roadClass === "ARTERIAL" ? 11 : 7}
-                pointerEvents="none"
-              />
-              <line
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke="transparent"
-                strokeWidth="16"
-              />
-              <line
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke={selection?.id === r.id ? "#047857" : "#a4b1bc"}
-                strokeWidth={
-                  selection?.id === r.id
-                    ? 4
-                    : r.roadClass === "ARTERIAL"
-                      ? 5
-                      : 2.5
-                }
-                markerEnd={editing ? "url(#arrow)" : undefined}
-              />
-              {editing && selection?.id === r.id && (
-                <text
-                  x={(x1 + x2) / 2}
-                  y={(y1 + y2) / 2 - 10}
-                  fontSize="12"
-                  fill="#1648b3"
-                >
-                  {r.distanceKm} km →
-                </text>
-              )}
-              <title>
-                {r.name}: {r.fromNodeId} → {r.toNodeId} · {r.distanceKm} km
-              </title>
-            </g>
-          );
-        })}
+        <g className="road-inspection">
+          {city.roads.map((r) => {
+            const a = point(r.fromNodeId),
+              b = point(r.toNodeId),
+              dx = b.x - a.x,
+              dy = b.y - a.y,
+              len = Math.hypot(dx, dy) || 1,
+              off = editing ? 3 : 0,
+              x1 = a.x - (dy / len) * off,
+              y1 = a.y + (dx / len) * off,
+              x2 = b.x - (dy / len) * off,
+              y2 = b.y + (dx / len) * off,
+              selected = selection?.kind === "road" && selection.id === r.id;
+            const street = streets.find((s) =>
+              s.roads.some((edge) => edge.id === r.id),
+            );
+            return (
+              <g
+                key={r.id}
+                className="road"
+                role="button"
+                tabIndex={0}
+                aria-label={`Road ${r.fromNodeId} to ${r.toNodeId}, ${r.distanceKm} km`}
+                onClick={() => onSelect({ kind: "road", id: r.id })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") onSelect({ kind: "road", id: r.id });
+                }}
+              >
+                <line
+                  x1={x1}
+                  y1={y1}
+                  x2={x2}
+                  y2={y2}
+                  stroke="transparent"
+                  strokeWidth={editing ? 7 : 18}
+                />
+                {selected && (
+                  <path
+                    className="selected-road"
+                    d={street?.path}
+                    fill="none"
+                    stroke="#1f8071"
+                    strokeWidth="5"
+                    strokeOpacity=".8"
+                    strokeLinecap="round"
+                    pointerEvents="none"
+                  />
+                )}
+                {editing && (
+                  <g
+                    className="direction-chevron"
+                    transform={`translate(${x1 + (x2 - x1) * 0.62},${y1 + (y2 - y1) * 0.62}) rotate(${(Math.atan2(dy, dx) * 180) / Math.PI})`}
+                    pointerEvents="none"
+                  >
+                    <path
+                      d="M-3,-2.5 L0,0 L-3,2.5"
+                      fill="none"
+                      stroke="#6c8274"
+                      strokeWidth="1.3"
+                      strokeLinecap="round"
+                    />
+                  </g>
+                )}
+                {editing && selected && (
+                  <text
+                    x={(x1 + x2) / 2}
+                    y={(y1 + y2) / 2 - 13}
+                    className="map-road-label"
+                  >
+                    {r.distanceKm} km →
+                  </text>
+                )}
+                <title>
+                  {`${r.name ?? "Road"}: ${r.fromNodeId} → ${r.toNodeId} · ${r.distanceKm} km`}
+                </title>
+              </g>
+            );
+          })}
+        </g>
         {layers.routes &&
           plan?.trips
             .filter(
               (t) =>
-                !simulationView ||
                 t.truckId ===
-                  (selection?.kind === "truck"
-                    ? selection.id
-                    : plan.trips[0]?.truckId),
+                (selection?.kind === "truck"
+                  ? selection.id
+                  : simulationView
+                    ? plan.trips[0]?.truckId
+                    : undefined),
             )
-            .map((trip, i) => (
-              <polyline
+            .map((trip) => (
+              <path
+                className="route-highlight"
                 key={trip.id}
-                points={trip.nodes
-                  .map((id) => point(id))
-                  .filter(Boolean)
-                  .map((p) => `${p.x},${p.y}`)
+                d={trip.nodes
+                  .slice(1)
+                  .map(
+                    (id, i) =>
+                      streets.find((s) =>
+                        s.roads.some(
+                          (r) =>
+                            r.fromNodeId === trip.nodes[i] && r.toNodeId === id,
+                        ),
+                      )?.path ?? "",
+                  )
                   .join(" ")}
                 fill="none"
-                stroke={
-                  city.zones.find((z) => z.id === trip.zoneId)?.color ??
-                  "#047857"
-                }
-                strokeWidth="3"
-                strokeOpacity=".65"
-                strokeDasharray={`${8 + (i % 3)} 6`}
+                stroke="#168676"
+                strokeWidth={simulationView ? 6 : 4}
+                strokeOpacity={simulationView ? 0.85 : 0.6}
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 pointerEvents="none"
               />
             ))}
+        {simulationView &&
+          layers.routes &&
+          simulation &&
+          (() => {
+            const id =
+                selection?.kind === "truck"
+                  ? selection.id
+                  : plan?.trips[0]?.truckId,
+              trip = currentTrip(
+                simulation.plan.trips.filter((t) => t.truckId === id),
+                simulation.time,
+              );
+            if (!trip) return null;
+            const state = tripState(trip, simulation.time),
+              a = point(state.from),
+              street = streets.find((s) =>
+                s.roads.some(
+                  (r) => r.fromNodeId === state.from && r.toNodeId === state.to,
+                ),
+              );
+            return (
+              <g className="active-road" pointerEvents="none">
+                {street ? (
+                  <>
+                    <path
+                      d={street.path}
+                      fill="none"
+                      stroke="#fff"
+                      strokeWidth="11"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d={street.path}
+                      fill="none"
+                      stroke="#087f72"
+                      strokeWidth="6"
+                      strokeLinecap="round"
+                    />
+                  </>
+                ) : (
+                  <circle
+                    cx={a.x}
+                    cy={a.y}
+                    r="21"
+                    fill="none"
+                    stroke="#168676"
+                    strokeOpacity=".5"
+                    strokeWidth="3"
+                  />
+                )}
+              </g>
+            );
+          })()}
         {city.nodes
           .filter(
             (n) =>
@@ -507,8 +548,8 @@ export default function CityCanvas({
                 }}
               >
                 <circle
-                  r={n.type === "HEAD" ? 15 : 7}
-                  fill={n.type === "HEAD" ? "#e3f1e9" : "#ffffff"}
+                  r={n.type === "HEAD" ? 17 : 4}
+                  fill={n.type === "HEAD" ? "#22705b" : "#ffffff"}
                   stroke={
                     selection?.id === n.id
                       ? "#223c35"
@@ -519,13 +560,20 @@ export default function CityCanvas({
                   strokeWidth="2"
                 />
                 {n.type === "HEAD" && (
-                  <text textAnchor="middle" y="4" fill="#047857" fontSize="11">
-                    ▣
+                  <path
+                    d="M-8,-3 L0,-9 L8,-3 V8 H-8 Z M-3,8 V1 H3 V8"
+                    fill="none"
+                    stroke="#fff"
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                  />
+                )}
+                {n.type === "HEAD" && (
+                  <text className="depot-label" textAnchor="middle" y="33">
+                    {n.label}
                   </text>
                 )}
-                <title>
-                  {n.label} · {n.id}
-                </title>
+                <title>{`${n.label} · ${n.id}`}</title>
               </g>
             );
           })}
@@ -533,16 +581,10 @@ export default function CityCanvas({
           city.bins.map((b, i) => {
             const n = point(b.roadNodeId);
             if (!n) return null;
-            const stack = city.bins
-              .filter((x) => x.roadNodeId === b.roadNodeId)
-              .findIndex((x) => x.id === b.id);
             const p =
               drag?.kind === "bin" && drag.id === b.id
                 ? drag.point
-                : (b.position ?? {
-                    x: Math.min(city.width - 15, n.x + 18 + (stack % 4) * 19),
-                    y: Math.max(15, n.y - 21 - Math.floor(stack / 4) * 25),
-                  });
+                : binPositions.get(b.id)!;
             const completed = simulation?.completed.includes(b.id),
               pending = plan?.pending.some((p) => p.binId === b.id);
             const s = status(b.fillPercent, city.settings),
@@ -610,29 +652,31 @@ export default function CityCanvas({
                     <title>Pending: not scheduled</title>
                   </circle>
                 )}
-                <rect
-                  x="-7"
-                  y="-8"
-                  width="14"
-                  height="17"
-                  rx="3"
+                <circle
+                  vectorEffect="non-scaling-stroke"
+                  r="12"
                   fill="#ffffff"
+                  stroke={selection?.id === b.id ? "#1960b1" : color}
+                  strokeWidth={selection?.id === b.id ? 3 : 1.5}
+                />
+                <rect
+                  x="-5"
+                  y="-5"
+                  width="10"
+                  height="11"
+                  rx="2"
+                  fill={color}
                   stroke={selection?.id === b.id ? "#1648b3" : color}
                   strokeWidth="1.8"
                 />
-                <path
-                  d="M-9,-10 H9 M-3,-13 H3"
-                  stroke={color}
-                  strokeWidth="2"
-                />
+                <path d="M-6,-7 H6 M-2,-9 H2" stroke={color} strokeWidth="2" />
                 {(city.bins.length <= 20 || selection?.id === b.id) && (
                   <text y="25" fill={color} fontSize="10" textAnchor="middle">
                     {b.fillPercent}%
                   </text>
                 )}
                 <title>
-                  {b.name}: {b.fillPercent}% · {s} · node {b.roadNodeId} (drag
-                  to move marker only)
+                  {`${b.name}: ${b.fillPercent}% · ${s} · node ${b.roadNodeId} (drag to move marker only)`}
                 </title>
               </g>
             );
@@ -666,21 +710,36 @@ export default function CityCanvas({
                 }}
               >
                 <rect
-                  x="-13"
-                  y="-9"
-                  width="26"
-                  height="18"
-                  fill="#223c35"
-                  stroke="#0e1823"
-                  strokeWidth="3"
+                  x="-17"
+                  y="-11"
+                  width="31"
+                  height="22"
+                  fill={
+                    ["#246b59", "#355d91", "#8554a0", "#a46224", "#237e88"][
+                      index % 5
+                    ]
+                  }
+                  stroke="#fff"
+                  strokeWidth={
+                    selection?.kind === "truck" && selection.id === t.id ? 4 : 2
+                  }
                   rx="4"
                 />
-                <text fill="#ffffff" fontSize="10" y="4" textAnchor="middle">
+                <path
+                  d="M5,-10 V10 M6,-6 H11 V-2 H6 M-12,12 H-8 M7,12 H11"
+                  stroke="#ffffff"
+                  strokeWidth="2"
+                />
+                <text
+                  fill="#ffffff"
+                  fontSize="11"
+                  x="-6"
+                  y="4"
+                  textAnchor="middle"
+                >
                   {index + 1}
                 </text>
-                <title>
-                  {t.label} · {state.state}
-                </title>
+                <title>{`${t.label} · ${state.state}`}</title>
               </g>
             );
           })}
@@ -706,7 +765,8 @@ export default function CityCanvas({
           <i style={{ background: "#c43c42" }} /> Urgent
         </span>
         <span>▣ · Collection head</span>
-        <span>Dashed boundary · illustrative zone extent</span>
+        <span>Illustrative land & zone extent</span>
+        <span>Crossing gaps · no junction</span>
         {simulationView && (
           <span>
             Route:{" "}
