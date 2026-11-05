@@ -59,7 +59,124 @@ afterEach(async () => {
 });
 
 describe("municipal UI integration (DOM, not graphical browser)", () => {
+  it("introduces the municipal use case, filters real exceptions and replans after an operator fixes one", async () => {
+    await mount();
+    expect(text()).toContain("SIMULATED MUNICIPAL DATA");
+    expect(text()).toContain("Know what needs collecting");
+    expect(button("Start simulation").disabled).toBe(false);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>(".urgent-kpi")!.click(),
+    );
+    expect(container.querySelectorAll(".review-table tbody tr")).toHaveLength(
+      15,
+    );
+    const alert = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        ".attention-panel>button",
+      ),
+    ].find((b) => b.textContent?.includes("cannot be served"))!;
+    await act(async () => alert.click());
+    expect(container.querySelectorAll(".review-table tbody tr")).toHaveLength(
+      1,
+    );
+    expect(
+      container.querySelector(".review-table")?.textContent?.toLowerCase(),
+    ).toContain("capacity");
+    await click("Inspect BIN-001");
+    expect(
+      container.querySelector<HTMLFieldSetElement>(".inspector fieldset")!
+        .disabled,
+    ).toBe(true);
+    await click("Edit selected object");
+    await value(
+      container.querySelector('.inspector input[name="capacity"]')!,
+      "1",
+    );
+    await click("Save changes");
+    await click("Dashboard");
+    expect(button("Plan collection").disabled).toBe(false);
+    await click("Plan collection");
+    expect(text()).toContain("0 pending bins");
+  }, 20000);
+  it("runs the demo to actual results and reloads city data without inventing persisted run history", async () => {
+    await mount();
+    await click("Start simulation");
+    await click("Pause");
+    await click("Finish run");
+    await click("Dashboard");
+    expect(container.querySelector(".result-preview")?.textContent).toContain(
+      "24 collected",
+    );
+    expect(container.querySelector(".result-preview")?.textContent).toContain(
+      "1 unserved",
+    );
+    await click("View results");
+    expect(container.querySelector(".canvas-wrap")).toBe(null);
+    expect(text()).toContain("Collection cycle complete");
+    expect(
+      container.querySelector('table[aria-label="Operational comparison"]'),
+    ).toBeTruthy();
+    await click("Save scenario");
+    const saved = loadLibrary(localStorage)[0];
+    expect(saved.bins.filter((b) => b.fillPercent === 0)).toHaveLength(24);
+    expect(saved.zones).toHaveLength(3);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await mount();
+    expect(text()).toContain("Greenfield municipal demo");
+    expect(button("Plan collection").disabled).toBe(false);
+    await click("Analytics");
+    expect(text()).toContain("Plan estimates · collection not run");
+    expect(container.querySelector(".run-progress")).toBe(null);
+  }, 20000);
+  it("protects saved cities and unsaved edits when opening the guided demo", async () => {
+    const existing = preset(10);
+    saveLibrary(localStorage, [existing]);
+    await mount();
+    await click("City Studio");
+    await click("Randomize fill levels");
+    await click("Open guided demo");
+    expect(container.querySelector('[role="dialog"]')).toBeTruthy();
+    await click("Cancel");
+    expect(container.querySelectorAll(".map-bin")).toHaveLength(10);
+    expect(loadLibrary(localStorage)).toEqual([existing]);
+    await click("Open guided demo");
+    await click("Confirm");
+    expect(text()).toContain("Greenfield municipal demo");
+    await click("Save scenario");
+    expect(loadLibrary(localStorage)).toHaveLength(2);
+    expect(loadLibrary(localStorage).find((c) => c.id === existing.id)).toEqual(
+      existing,
+    );
+  });
+  it("edits fleet availability on the operations page and invalidates the dashboard plan", async () => {
+    await mount();
+    await click("Zone & Fleet Operations");
+    const summary = container.querySelector<HTMLElement>(
+      ".fleet-editor summary",
+    )!;
+    await act(async () => summary.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>(
+          '.fleet-editor input[name="available"]',
+        )!
+        .click(),
+    );
+    await click("Save Truck 01");
+    await click("Dashboard");
+    expect(
+      container.querySelectorAll(".situation-kpi")[3].textContent,
+    ).toContain("4 available");
+    expect(button("Plan collection").disabled).toBe(false);
+    await click("Analytics");
+    expect(container.querySelector(".canvas-wrap")).toBe(null);
+    expect(container.querySelector(".fleet-manager")).toBe(null);
+    await click("Show help");
+    expect(text()).toContain("Your collection workflow");
+  });
   it("applies one bulk fill operation reversibly and searches/declutters without editing", async () => {
+    saveLibrary(localStorage, [preset(100)]);
     await mount();
     await click("City Studio");
     const form =
@@ -108,7 +225,9 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     c.trucks[0].zoneId = c.zones[0].id;
     saveLibrary(localStorage, [c]);
     await mount();
+    await click("Collection Simulator");
     await click("Optimize all zones");
+    await click("Dashboard");
     await act(async () =>
       container
         .querySelector(".map-node")!
@@ -120,16 +239,16 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
       container.querySelector<HTMLFieldSetElement>(".inspector fieldset")!
         .disabled,
     ).toBe(true);
-    expect(button("Randomize fill levels").closest("fieldset")?.disabled).toBe(
-      true,
-    );
+    expect(container.querySelector(".inline-edit-tools")).toBe(null);
     await click("Edit map");
     await value(
       container.querySelector('.inspector input[name="label"]')!,
       "Renamed municipal head",
     );
     await click("Save changes");
-    expect(button("Start collection").disabled).toBe(false);
+    await click("Dashboard");
+    expect(button("Start simulation").disabled).toBe(false);
+    await click("City Studio");
     await click("Save scenario");
     const saved = loadLibrary(localStorage)[0];
     expect(saved.zones).toEqual(c.zones);
@@ -145,6 +264,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     );
   });
   it("traps modal focus and cancels safely with Escape", async () => {
+    saveLibrary(localStorage, [preset(100)]);
     await mount();
     await click("City Studio");
     await click("Reset scenario");
@@ -175,9 +295,12 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     c.zones = autoZone(c, ["n0", "n3", "n6"]).zones;
     saveLibrary(localStorage, [c]);
     await mount();
+    await click("Analytics");
     expect(text()).toContain("Pickup ≥80%");
     expect(text()).toContain("Urgent ≥90%");
+    await click("Collection Simulator");
     await click("Optimize all zones");
+    await click("Analytics");
     expect(text()).toContain("Distance travelled");
     expect(text()).toContain("Remaining stops");
     expect(
@@ -211,6 +334,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     expect(button("Refresh").disabled).toBe(false);
   });
   it("walks 100-bin zoning, randomization, planning, playback, save and reload", async () => {
+    saveLibrary(localStorage, [preset(100)]);
     await mount();
     await click("Zone & Fleet Operations");
     const heads = [
@@ -219,7 +343,9 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     for (const head of heads.slice(0, 3)) await act(async () => head.click());
     await click("Generate zones");
     expect(container.querySelectorAll(".zone-card")).toHaveLength(3);
+    await click("City Studio");
     await click("Randomize fill levels");
+    await click("Collection Simulator");
     await click("Optimize all zones");
     expect(text()).toContain("Trip schedule & pending work");
     expect(button("Start collection").disabled).toBe(false);
@@ -238,6 +364,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     await act(async () => root.unmount());
     root = createRoot(container);
     await mount();
+    await click("Zone & Fleet Operations");
     expect(container.querySelectorAll(".zone-card")).toHaveLength(3);
     expect(text()).toContain("Newhaven Metro");
   }, 20000);
@@ -247,8 +374,8 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
       "City Studio",
       "Zone & Fleet Operations",
       "Collection Simulator",
-      "Analytics & What-If",
-      "Overview",
+      "Analytics",
+      "Dashboard",
     ]) {
       await click(name);
       expect(container.querySelector("h1")).toBeTruthy();
@@ -264,6 +391,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     c.zones = autoZone(c, ["n0", "n3", "n6"]).zones;
     saveLibrary(localStorage, [c]);
     await mount();
+    await click("Collection Simulator");
     await click("Optimize all zones");
     await click("City Studio");
     await act(async () =>
@@ -277,13 +405,17 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     await value(input, "1.75");
     await click("Save changes");
     expect(text()).toContain("Road graph changed");
-    expect(container.querySelectorAll(".zone-card")).toHaveLength(0);
-    expect(button("Start collection").disabled).toBe(true);
-    await click("Undo edit");
-    expect(container.querySelectorAll(".zone-card")).toHaveLength(3);
-    await click("Redo edit");
-    expect(container.querySelectorAll(".zone-card")).toHaveLength(0);
     await click("Save scenario");
+    expect(loadLibrary(localStorage)[0].zones).toHaveLength(0);
+    await click("Collection Simulator");
+    expect(button("Start collection").disabled).toBe(true);
+    await click("City Studio");
+    await click("Undo edit");
+    await click("Save scenario");
+    expect(loadLibrary(localStorage)[0].zones).toHaveLength(3);
+    await click("Redo edit");
+    await click("Save scenario");
+    expect(loadLibrary(localStorage)[0].zones).toHaveLength(0);
     expect(loadLibrary(localStorage)[0].roads[0].distanceKm).toBe(1.75);
   });
   it("creates a blank city, adds a head and bin, and saves edited bin values", async () => {
@@ -306,6 +438,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     expect(parseCity(JSON.stringify(c))).toEqual(c);
   });
   it("retains readable feedback when a referenced node cannot be deleted", async () => {
+    saveLibrary(localStorage, [preset(100)]);
     await mount();
     await click("City Studio");
     await act(async () =>
@@ -317,7 +450,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     );
     await click("Delete node");
     await click("Confirm");
-    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Remove connected roads",
     );
     expect(container.querySelectorAll(".map-node")).toHaveLength(100);

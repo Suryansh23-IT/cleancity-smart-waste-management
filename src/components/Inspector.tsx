@@ -227,9 +227,11 @@ export default function Inspector({
               <label>
                 Type
                 <select name="type" defaultValue={n.type}>
-                  <option>INTERSECTION</option>
-                  <option>HEAD</option>
-                  <option>OPTIONAL_UNLOADING_POINT</option>
+                  <option value="INTERSECTION">Road junction</option>
+                  <option value="HEAD">Collection head / depot</option>
+                  <option value="OPTIONAL_UNLOADING_POINT">
+                    Optional unloading point
+                  </option>
                 </select>
               </label>
               <div className="field-row">

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
+  AlertTriangle,
   ArrowDownToLine,
   ArrowUpFromLine,
   BarChart3,
@@ -64,13 +65,16 @@ import {
   ComparisonDetails,
 } from "./components/OperationsInsights";
 
+import Dashboard from "./components/Dashboard";
+import FleetPanel from "./components/FleetPanel";
+import { municipalDemo, workspaceStatus, BinFilter } from "./core/workspace";
 const pages = [
   { name: "Overview", icon: LayoutDashboard },
-  { name: "Physical IoT Lab", icon: FlaskConical },
   { name: "City Studio", icon: Map },
   { name: "Zone & Fleet Operations", icon: Boxes },
   { name: "Collection Simulator", icon: Truck },
   { name: "Analytics & What-If", icon: BarChart3 },
+  { name: "Physical IoT Lab", icon: FlaskConical },
 ];
 const money = (v: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -83,11 +87,11 @@ export default function App() {
   const [initial] = useState(() => {
     try {
       const list = loadLibrary(localStorage);
-      return { list, city: list[0] ?? preset(100), error: "" };
+      return { list, city: list[0] ?? municipalDemo(), error: "" };
     } catch {
       return {
         list: [] as City[],
-        city: preset(100),
+        city: municipalDemo(),
         error:
           "Saved data could not be loaded. It has not been overwritten; export/recover browser storage before saving.",
       };
@@ -98,8 +102,16 @@ export default function App() {
     [page, setPage] = useState("Overview"),
     [selection, setSelection] = useState<Selection | null>(null),
     [heads, setHeads] = useState<string[]>([]),
-    [plan, setPlan] = useState<Plan | null>(null),
-    [baseline, setBaseline] = useState<Plan | null>(null),
+    [plan, setPlan] = useState<Plan | null>(() =>
+      initial.list.length || initial.error
+        ? null
+        : planCollection(initial.city),
+    ),
+    [baseline, setBaseline] = useState<Plan | null>(() =>
+      initial.list.length || initial.error
+        ? null
+        : planCollection(initial.city, true),
+    ),
     [sim, setSim] = useState<Simulation | null>(null),
     [speed, setSpeed] = useState(10),
     [notice, setNotice] = useState(initial.error),
@@ -112,15 +124,84 @@ export default function App() {
       action: () => void;
     } | null>(null),
     [showSettings, setShowSettings] = useState(false);
+  const [binFilter, setBinFilter] = useState<BinFilter>("ALL"),
+    [showReview, setShowReview] = useState(false),
+    [showHelp, setShowHelp] = useState(false),
+    [menuOpen, setMenuOpen] = useState(false),
+    [opsMapOpen, setOpsMapOpen] = useState(false),
+    [lastSaved, setLastSaved] = useState<string | null>(null),
+    [focusTarget, setFocusTarget] = useState<{
+      id: string;
+      stamp: number;
+    } | null>(null);
+  function navigate(next: string, target?: string) {
+    setPage(next);
+    setSelection(null);
+    setShowSettings(false);
+    setMenuOpen(false);
+    setFocusTarget({ id: target ?? "workspace-title", stamp: Date.now() });
+  }
+  useEffect(() => {
+    const el = document.getElementById(focusTarget?.id ?? "");
+    el?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    el?.focus({ preventScroll: true });
+  }, [focusTarget]);
+  const openSettings = () => {
+    navigate("City Studio");
+    setShowSettings(true);
+  };
+  const review = (filter: BinFilter) => {
+    setBinFilter(filter);
+    setShowReview(true);
+    setFocusTarget({ id: "bin-review", stamp: Date.now() });
+  };
+  const startRun = () =>
+    guard(() => {
+      if (!plan?.trips.length)
+        throw Error(
+          "Plan at least one feasible trip before starting collection.",
+        );
+      const run = startSimulation(city, plan);
+      setSim(run);
+      stateRef.current = { city, sim: run };
+      navigate("Collection Simulator");
+    });
+  const openDemo = () => {
+    const c = municipalDemo();
+    c.id = uid("demo");
+    load(c, true, "Overview");
+  };
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        document
+          .querySelector<HTMLButtonElement>(".mobile-navigation-toggle")
+          ?.focus();
+      }
+    };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [menuOpen]);
   const stateRef = useRef({ city, sim });
   stateRef.current = { city, sim };
   const importRef = useRef<HTMLInputElement>(null);
-  const notify = (message: string) => setNotice(message);
+  const [noticeKind, setNoticeKind] = useState<"info" | "success" | "error">(
+    initial.error ? "error" : "info",
+  );
+  const notify = (
+    message: string,
+    kind: "info" | "success" | "error" = "info",
+  ) => {
+    setNotice(message);
+    setNoticeKind(kind);
+  };
   const guard = (action: () => void) => {
     try {
       action();
     } catch (e) {
-      notify(e instanceof Error ? e.message : String(e));
+      notify(e instanceof Error ? e.message : String(e), "error");
     }
   };
   const confirm = (message: string, action: () => void) =>
@@ -172,7 +253,15 @@ export default function App() {
       setFuture([]);
       setCity(c);
       setDirty(true);
-      if (operationalChanged(city, c)) invalidate();
+      const operational = operationalChanged(city, c);
+      if (operational) invalidate();
+      notify(
+        graph
+          ? "Network updated. Regenerate zones before planning."
+          : operational
+            ? "Scenario updated. Replan collection to use these changes."
+            : "Changes applied to the workspace. Save scenario to keep them.",
+      );
       setWarnings(
         graph
           ? ["Road graph changed. Generate zones again before planning."]
@@ -180,18 +269,25 @@ export default function App() {
       );
       return true;
     } catch (error) {
-      notify(error instanceof Error ? error.message : String(error));
+      notify(error instanceof Error ? error.message : String(error), "error");
       return false;
     }
   }
-  function load(c: City) {
+  function load(c: City, ready = false, destination?: string) {
     const apply = () => {
       setCity(clone(c));
       setHeads([]);
       setPast([]);
       setFuture([]);
-      invalidate();
+      if (ready) {
+        setPlan(planCollection(c));
+        setBaseline(planCollection(c, true));
+        setSim(null);
+      } else invalidate();
       setSelection(null);
+      setShowReview(false);
+      setLastSaved(null);
+      if (destination) navigate(destination);
       setWarnings([]);
       setDirty(!library.some((x) => x.id === c.id));
       notify(`${c.name} loaded`);
@@ -213,7 +309,10 @@ export default function App() {
       saveLibrary(localStorage, list);
       setLibrary(clone(list));
       setDirty(false);
-      notify("Scenario saved in this browser");
+      setLastSaved(new Date().toLocaleTimeString());
+      notify(
+        "City saved in this browser. Plans and run history stay in this tab.",
+      );
     });
   }
   function generate() {
@@ -237,7 +336,8 @@ export default function App() {
   function optimize() {
     guard(() => {
       if (sim) throw Error("Reset collection before replanning");
-      if (!city.zones.length) throw Error("Generate zones before optimizing");
+      const reason = workspaceStatus(city, null, null).planReason;
+      if (reason) throw Error(reason);
       const p = planCollection(city),
         b = planCollection(city, true);
       setPlan(p);
@@ -406,12 +506,280 @@ export default function App() {
     isStudio = page === "City Studio",
     isOps = page === "Zone & Fleet Operations",
     isSim = page === "Collection Simulator",
-    isAnalytics = page === "Analytics & What-If";
+    isAnalytics = page === "Analytics & What-If",
+    isDashboard = page === "Overview";
+  const mapPanel = (
+    <section className="city-panel" id="city-map" tabIndex={-1}>
+      <div className="city-panel-header">
+        <div>
+          <span className="eyebrow">
+            {isStudio
+              ? "CITY STUDIO"
+              : isSim
+                ? "COLLECTION PLAYBACK"
+                : "CITY OPERATIONS MAP"}
+          </span>
+          <h3>
+            {isStudio
+              ? "Your city. Your connections."
+              : isSim
+                ? "Follow collection on the road"
+                : "City status & collection responsibility"}
+          </h3>
+        </div>
+        <div className="map-tools">
+          <div className="mode-switch" aria-label="Map interaction mode">
+            <button
+              aria-pressed={!isStudio && !isSim}
+              onClick={() => navigate("Overview")}
+            >
+              View map
+            </button>
+            <button
+              aria-pressed={isStudio}
+              onClick={() => setPage("City Studio")}
+            >
+              Edit map
+            </button>
+            <button
+              aria-pressed={isSim}
+              onClick={() => setPage("Collection Simulator")}
+            >
+              Simulate
+            </button>
+          </div>
+          {isStudio && (
+            <>
+              <button onClick={() => addNode()}>
+                <Plus size={15} /> Node
+              </button>
+              <button
+                aria-label="Undo edit"
+                disabled={!past.length}
+                onClick={() => undo()}
+              >
+                <Undo2 size={16} />
+              </button>
+              <button
+                aria-label="Redo edit"
+                disabled={!future.length}
+                onClick={() => undo(true)}
+              >
+                <Redo2 size={16} />
+              </button>
+            </>
+          )}
+          {isStudio && (
+            <fieldset
+              className="inline-edit-tools"
+              disabled={!(isStudio || isOps) || !!sim}
+            >
+              <label className="seed-field">
+                Seed
+                <input
+                  type="number"
+                  value={city.settings.seed}
+                  onChange={(e) =>
+                    change({
+                      ...city,
+                      settings: {
+                        ...city.settings,
+                        seed: Number(e.target.value),
+                      },
+                    })
+                  }
+                />
+              </label>
+              <button onClick={() => change(randomize(city))}>
+                <RefreshCw size={15} /> Randomize fill levels
+              </button>
+              <button
+                aria-label="Generate overflow demo"
+                title="Fill all simulated bins to 90–100%"
+                onClick={() => change(randomize(city, true))}
+              >
+                <Sparkles size={16} />
+              </button>
+              <button aria-label="Scenario settings" onClick={openSettings}>
+                <Settings2 size={17} />
+              </button>
+            </fieldset>
+          )}
+        </div>
+      </div>
+      <div
+        className={`canvas-layout ${isStudio || selection ? "has-inspector" : ""}`}
+      >
+        <CityCanvas
+          key={city.id}
+          city={city}
+          simulationView={isSim}
+          plan={plan}
+          simulation={sim}
+          selection={selection}
+          onSelect={setSelection}
+          onMove={move}
+          onCreate={addNode}
+          editing={isStudio && !sim}
+        />
+        {(isStudio || selection) && (
+          <Inspector
+            city={city}
+            selection={selection}
+            select={setSelection}
+            change={change}
+            confirm={confirm}
+            report={notify}
+            readOnly={!isStudio || !!sim}
+            edit={() => setPage("City Studio")}
+          />
+        )}
+      </div>
+      <div className="canvas-footer">
+        <span>
+          <i className="live-dot" />{" "}
+          {sim?.running ? "Collection running" : "Scenario ready"}{" "}
+          <span className="muted">· Directed roads · Edge weights in km</span>
+        </span>
+        <span>
+          {plan
+            ? "Current collection plan"
+            : city.zones.length
+              ? "Zones ready · Collection plan needed"
+              : "Zones need generation"}{" "}
+          <ChevronRight size={13} />
+        </span>
+      </div>
+    </section>
+  );
+  const collectionControls = (
+    <section
+      className="panel collection-panel"
+      id="dispatch-controls"
+      tabIndex={-1}
+    >
+      <div>
+        <span className="eyebrow">04 / SMARTER COLLECTION</span>
+        <h3>
+          {sim
+            ? sim.time >= sim.plan.duration
+              ? "Collection run finished"
+              : "Collection in motion"
+            : "Plan and simulate collection"}
+        </h3>
+        <p>
+          {sim
+            ? `${sim.time.toFixed(1)} / ${sim.plan.duration.toFixed(1)} virtual minutes · ${sim.completed.length} completed stops`
+            : "Plan current pickups across every zone, without exceeding truck capacity."}
+        </p>
+      </div>
+      <div className="playback">
+        <p className="playback-reason">
+          {workspaceStatus(city, plan, sim).planReason ??
+            workspaceStatus(city, plan, sim).startReason ??
+            "The plan is ready. Start collection to simulate pickups."}
+        </p>
+        <button
+          onClick={() => navigate("Zone & Fleet Operations", "zone-setup")}
+        >
+          Configure zones & fleet
+        </button>
+        <button
+          onClick={optimize}
+          disabled={!!workspaceStatus(city, plan, sim).planReason}
+        >
+          <Route size={16} /> Optimize all zones
+        </button>
+        {!sim ? (
+          <button
+            className="primary"
+            disabled={!plan?.trips.length}
+            onClick={startRun}
+          >
+            <Play size={16} /> Start collection
+          </button>
+        ) : (
+          <>
+            <button
+              className="primary"
+              disabled={sim.time >= sim.plan.duration}
+              onClick={() =>
+                setSim({
+                  ...sim,
+                  running: sim.time < sim.plan.duration && !sim.running,
+                })
+              }
+            >
+              {sim.running ? <Pause size={16} /> : <Play size={16} />}{" "}
+              {sim.running ? "Pause" : "Resume"}
+            </button>
+            <button
+              onClick={() => {
+                if (sim.running) setSim({ ...sim, running: false });
+                else step();
+              }}
+              disabled={sim.running || sim.time >= sim.plan.duration}
+            >
+              <SkipForward size={16} /> Step +1 min
+            </button>
+            <button
+              disabled={sim.running || sim.time >= sim.plan.duration}
+              onClick={() => step(sim.plan.duration - sim.time)}
+            >
+              Finish run
+            </button>
+            <button onClick={resetSim}>
+              <RotateCcw size={16} /> Reset run
+            </button>
+            {sim.time >= sim.plan.duration && (
+              <button
+                onClick={() => {
+                  setCity(clone(sim.original));
+                  setSim(startSimulation(sim.original, sim.plan));
+                  setDirty(true);
+                }}
+              >
+                <Play size={16} />
+                Replay collection
+              </button>
+            )}
+          </>
+        )}
+        <label>
+          Speed
+          <select
+            value={speed}
+            onChange={(e) => setSpeed(Number(e.target.value))}
+          >
+            {[1, 5, 10, 30, 60].map((s) => (
+              <option key={s} value={s}>
+                {s}×
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {sim && <progress max={sim.plan.duration || 1} value={sim.time} />}
+    </section>
+  );
   return (
     <div
-      className={`app ${physical ? "lab-theme" : ""} ${page === "City Studio" ? "studio-workspace" : ""}`}
+      className={`app ${menuOpen ? "menu-open" : ""} ${isDashboard ? "dashboard-page" : ""} ${physical ? "lab-theme" : ""} ${page === "City Studio" ? "studio-workspace" : ""}`}
     >
+      {menuOpen && (
+        <button
+          className="navigation-backdrop"
+          aria-label="Dismiss navigation"
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
       <aside className="sidebar">
+        <button
+          className="mobile-close-navigation"
+          onClick={() => setMenuOpen(false)}
+        >
+          Close menu ×
+        </button>
         <a
           className="brand"
           href="#"
@@ -433,15 +801,26 @@ export default function App() {
           {pages.map((p) => (
             <button
               key={p.name}
-              aria-label={p.name}
+              aria-label={
+                p.name === "Overview"
+                  ? "Dashboard"
+                  : p.name === "Analytics & What-If"
+                    ? "Analytics"
+                    : p.name
+              }
               className={page === p.name ? "active" : ""}
               onClick={() => {
-                setPage(p.name);
-                setSelection(null);
+                navigate(p.name);
               }}
             >
               <p.icon size={19} />
-              <span>{p.name}</span>
+              <span>
+                {p.name === "Overview"
+                  ? "Dashboard"
+                  : p.name === "Analytics & What-If"
+                    ? "Analytics"
+                    : p.name}
+              </span>
               {p.name === "Physical IoT Lab" && <i className="offline-dot" />}
             </button>
           ))}
@@ -466,28 +845,42 @@ export default function App() {
       </aside>
       <div className="workspace">
         <header className="topbar">
+          <button
+            className="mobile-navigation-toggle"
+            aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            ☰
+          </button>
           <div>
-            Workspace <ChevronRight size={14} /> <b>{page}</b>
+            Workspace <ChevronRight size={14} />{" "}
+            <b>
+              {page === "Overview"
+                ? "Dashboard"
+                : page === "Analytics & What-If"
+                  ? "Analytics"
+                  : page}
+            </b>
           </div>
           <div>
             <span className={`connection ${physical ? "" : "virtual"}`}>
               <i />
-              {physical ? "Live data only" : "Simulator available offline"}
+              {physical
+                ? "Physical telemetry only"
+                : "Simulator available offline"}
             </span>
-            <button
-              aria-label="Show workspace settings"
-              disabled={physical}
-              onClick={() => setShowSettings((s) => !s)}
-            >
-              <Settings2 size={18} />
-            </button>
+            {!physical && (
+              <button
+                aria-label="Show workspace settings"
+                onClick={openSettings}
+              >
+                <Settings2 size={18} />
+              </button>
+            )}
             <button
               aria-label="Show help"
-              onClick={() =>
-                notify(
-                  "Choose a city, select K distinct head nodes, generate zones, randomize fills, optimize and start collection. Studio edits invalidate plans.",
-                )
-              }
+              onClick={() => setShowHelp(!showHelp)}
             >
               <CircleHelp size={18} />
             </button>
@@ -501,12 +894,18 @@ export default function App() {
                   ? "OBSERVE THE REAL WORLD"
                   : "PLAN. SIMULATE. MAKE AN IMPACT."}
               </span>
-              <h1>{page === "Overview" ? "A cleaner city, in view." : page}</h1>
+              <h1 id="workspace-title" tabIndex={-1}>
+                {page === "Overview"
+                  ? "Municipal operations"
+                  : isAnalytics
+                    ? "Collection analytics"
+                    : page}
+              </h1>
               <p>
                 {physical
                   ? "Four physical bins. Verified telemetry. An honest view of connectivity."
                   : page === "Overview"
-                    ? "Your municipal network, connected insights and smarter collection decisions."
+                    ? "Review demand. Plan feasible pickups. Simulate collection. Evaluate results."
                     : isStudio
                       ? "Design your road network. Every connection makes a difference."
                       : isOps
@@ -523,54 +922,129 @@ export default function App() {
                     <Save size={16} /> Save scenario
                     {dirty && <i className="unsaved-dot" />}
                   </button>
-                  <button
-                    className="primary"
-                    onClick={() => {
-                      setPage("Zone & Fleet Operations");
-                      if (city.zones.length) optimize();
-                    }}
-                  >
-                    <Route size={16} /> Plan collection
-                  </button>
+                  {isOps && (
+                    <button
+                      className="primary"
+                      disabled={!!workspaceStatus(city, plan, sim).planReason}
+                      title={
+                        workspaceStatus(city, plan, sim).planReason ??
+                        "Build feasible collection trips"
+                      }
+                      onClick={() => {
+                        optimize();
+                        navigate("Collection Simulator");
+                      }}
+                    >
+                      Plan collection
+                    </button>
+                  )}
+                  {!isDashboard && (
+                    <button onClick={openDemo}>Open guided demo</button>
+                  )}
                 </>
               )}
             </div>
           </div>
+          {showHelp && (
+            <section className="panel help-panel" aria-label="Workflow guide">
+              <div className="section-heading">
+                <h3>Your collection workflow</h3>
+                <button onClick={() => setShowHelp(false)}>Close guide</button>
+              </div>
+              <p>
+                1. Select or create a city → 2. Edit bins and roads → 3. Choose
+                collection heads and generate zones → 4. Assign available trucks
+                → 5. Plan pickups → 6. Simulate → 7. Analyze results.
+              </p>
+              <p>
+                A head is a depot where trips start and return. A zone assigns
+                responsibility for bins. The planner follows directed roads and
+                respects truck capacity; unserved pickups retain an explanation.
+              </p>
+              <p>
+                Save stores the city and current fills locally. Plans and run
+                history are session-only. Export city JSON in City Studio for a
+                portable backup. All municipal values are simulated; actual
+                devices appear only in Physical IoT Lab.
+              </p>
+              <button onClick={openDemo}>Open guided demo</button>
+              <button
+                onClick={() =>
+                  navigate("Zone & Fleet Operations", "zone-setup")
+                }
+              >
+                Go to zone setup
+              </button>
+            </section>
+          )}
           {physical ? (
             <PhysicalLab />
           ) : (
             <>
-              <div className="stats">
-                <Metric
-                  label="SIMULATED BINS"
-                  value={city.bins.length.toString()}
-                  detail={`${city.nodes.length} road nodes in ${city.name}`}
-                  icon={<Boxes />}
-                />
-                <Metric
-                  label="COLLECTION NEEDED"
-                  value={eligible.length.toString()}
-                  detail={`${urgent.length} urgent · threshold ${city.settings.pickupThreshold}%`}
-                  icon={<Activity />}
-                  warning
-                />
-                <Metric
-                  label="AVERAGE FILL"
-                  value={`${Math.round(avg)}%`}
-                  detail="Current simulated bin levels"
-                  icon={<BarChart3 />}
-                />
-                <Metric
-                  label="PLANNED DISTANCE"
-                  value={plan ? `${fixed(plan.distance)} km` : "—"}
-                  detail={
-                    plan
-                      ? `${plan.trips.length} trips · ${plan.pending.length} pending`
-                      : "Generate zones, then optimize"
-                  }
-                  icon={<Route />}
-                />
-              </div>
+              {!isStudio && (
+                <section
+                  className="workspace-city-bar"
+                  aria-label="Current scenario"
+                >
+                  <div>
+                    <b>{city.name}</b>
+                    <small>
+                      {city.bins.length} bins · {city.zones.length} zones ·{" "}
+                      {city.trucks.length} trucks ·{" "}
+                      {dirty
+                        ? "Unsaved changes"
+                        : lastSaved
+                          ? `Saved at ${lastSaved}`
+                          : library.some((c) => c.id === city.id)
+                            ? "Saved city loaded"
+                            : "Not saved in this browser"}
+                    </small>
+                  </div>
+                  <label>
+                    Switch city
+                    <select
+                      aria-label="Switch city"
+                      value=""
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "demo") openDemo();
+                        else if (v.startsWith("saved:")) {
+                          const c = library.find((c) => c.id === v.slice(6));
+                          if (c) load(c);
+                        } else if (v) load(preset(Number(v)));
+                      }}
+                    >
+                      <option value="">Saved cities & presets</option>
+                      <option value="demo">Guided municipal demo</option>
+                      {library.map((c) => (
+                        <option key={c.id} value={`saved:${c.id}`}>
+                          {c.name}
+                        </option>
+                      ))}
+                      {[10, 20, 50, 100].map((n) => (
+                        <option key={n} value={n}>
+                          {n}-bin preset
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button onClick={() => navigate("City Studio")}>
+                    Edit / manage cities
+                  </button>
+                  {city.id.startsWith("demo-") && (
+                    <button onClick={openDemo}>Reset demo</button>
+                  )}
+                  <button
+                    onClick={() => {
+                      const c = blankCity();
+                      c.id = uid("city");
+                      load(c, false, "City Studio");
+                    }}
+                  >
+                    New city
+                  </button>
+                </section>
+              )}
               {isStudio && (
                 <StudioTools
                   city={city}
@@ -579,155 +1053,161 @@ export default function App() {
                   load={(c) => load({ ...c, id: uid("city") })}
                 />
               )}
-              <section className="scenario-bar">
-                <div className="scenario-title">
-                  <span className="mini-icon">
-                    <Map size={19} />
-                  </span>
-                  <div>
-                    <b>{city.name}</b>
-                    <small>
-                      {city.bins.length} bins · {city.zones.length} zones ·{" "}
-                      {city.trucks.length} trucks{" "}
-                      {dirty ? "· Unsaved changes" : ""}
-                    </small>
-                  </div>
-                </div>
-                <label className="sr-only" htmlFor="preset">
-                  Load preset
-                </label>
-                <select
-                  id="preset"
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value)
-                      load(
-                        e.target.value === "bad"
-                          ? infeasiblePreset()
-                          : preset(Number(e.target.value)),
-                      );
-                  }}
-                >
-                  <option value="">Choose city preset</option>
-                  {[10, 20, 50, 100].map((n) => (
-                    <option key={n} value={n}>
-                      {n} bins · {n <= 20 ? "Riverton" : "Newhaven"}
-                    </option>
-                  ))}
-                  <option value="bad">Infeasible test district</option>
-                </select>
-                <button
-                  onClick={() => {
-                    const c = blankCity();
-                    c.id = uid("city");
-                    load(c);
-                    setPage("City Studio");
-                  }}
-                >
-                  <Plus size={15} /> New city
-                </button>
-                <button
-                  aria-label="Duplicate city"
-                  title="Duplicate city"
-                  onClick={() => {
-                    const c = clone(city);
-                    c.id = uid("city");
-                    c.name += " copy";
-                    load(c);
-                  }}
-                >
-                  <Copy size={16} />
-                </button>
-                <button
-                  aria-label="Export scenario"
-                  title="Export scenario"
-                  onClick={exportCity}
-                >
-                  <ArrowDownToLine size={16} />
-                </button>
-                <button
-                  aria-label="Import scenario"
-                  title="Import validated JSON"
-                  onClick={() => importRef.current?.click()}
-                >
-                  <ArrowUpFromLine size={16} />
-                </button>
-                <input
-                  ref={importRef}
-                  hidden
-                  type="file"
-                  accept=".json,application/json"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    if (f.size > 2_000_000) {
-                      notify("File exceeds 2 MB");
-                      return;
-                    }
-                    try {
-                      const c = parseCity(await f.text());
-                      c.id = uid("city");
-                      load(c);
-                    } catch (err) {
-                      notify(String(err));
-                    }
-                    e.target.value = "";
-                  }}
-                />
-                <button
-                  disabled={!isStudio}
-                  aria-label="Reset scenario"
-                  title="Reset to original preset / blank"
-                  onClick={() =>
-                    confirm(
-                      "Reset the city to its original preset (or empty city)? Unsaved changes and active collection will be discarded.",
-                      () => {
-                        const c = city.preset
-                          ? preset(city.preset)
-                          : blankCity();
-                        c.id = city.id;
-                        setCity(c);
-                        setHeads([]);
-                        setSelection(null);
-                        setPast([]);
-                        setFuture([]);
-                        invalidate();
-                        setWarnings([]);
-                        setDirty(true);
-                      },
-                    )
-                  }
-                >
-                  <RotateCcw size={16} />
-                </button>
-              </section>
-              {library.length > 0 && (
-                <div className="saved-list">
-                  <span>Saved in this browser</span>
-                  {library.map((c) => (
-                    <div key={c.id}>
-                      <button onClick={() => load(c)}>{c.name}</button>
-                      <button
-                        aria-label={`Delete saved ${c.name}`}
-                        onClick={() =>
-                          confirm(
-                            `Delete saved city “${c.name}” from this browser? The current open city is retained.`,
-                            () =>
-                              guard(() => {
-                                const list = library.filter(
-                                  (x) => x.id !== c.id,
-                                );
-                                saveLibrary(localStorage, list);
-                                setLibrary(list);
-                              }),
-                          )
-                        }
-                      >
-                        <Trash2 size={12} />
-                      </button>
+              {isStudio && (
+                <>
+                  <section className="scenario-bar">
+                    <div className="scenario-title">
+                      <span className="mini-icon">
+                        <Map size={19} />
+                      </span>
+                      <div>
+                        <b>{city.name}</b>
+                        <small>
+                          {city.bins.length} bins · {city.zones.length} zones ·{" "}
+                          {city.trucks.length} trucks{" "}
+                          {dirty ? "· Unsaved changes" : ""}
+                        </small>
+                      </div>
                     </div>
-                  ))}
-                </div>
+                    <label className="sr-only" htmlFor="preset">
+                      Load preset
+                    </label>
+                    <select
+                      id="preset"
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value)
+                          load(
+                            e.target.value === "bad"
+                              ? infeasiblePreset()
+                              : preset(Number(e.target.value)),
+                          );
+                      }}
+                    >
+                      <option value="">Choose city preset</option>
+                      {[10, 20, 50, 100].map((n) => (
+                        <option key={n} value={n}>
+                          {n} bins · {n <= 20 ? "Riverton" : "Newhaven"}
+                        </option>
+                      ))}
+                      <option value="bad">Infeasible test district</option>
+                    </select>
+                    <button
+                      onClick={() => {
+                        const c = blankCity();
+                        c.id = uid("city");
+                        load(c);
+                        setPage("City Studio");
+                      }}
+                    >
+                      <Plus size={15} /> New city
+                    </button>
+                    <button
+                      aria-label="Duplicate city"
+                      title="Duplicate city"
+                      onClick={() => {
+                        const c = clone(city);
+                        c.id = uid("city");
+                        c.name += " copy";
+                        load(c);
+                      }}
+                    >
+                      <Copy size={16} />
+                    </button>
+                    <button
+                      aria-label="Export scenario"
+                      title="Export scenario"
+                      onClick={exportCity}
+                    >
+                      <ArrowDownToLine size={16} />
+                    </button>
+                    <button
+                      aria-label="Import scenario"
+                      title="Import validated JSON"
+                      onClick={() => importRef.current?.click()}
+                    >
+                      <ArrowUpFromLine size={16} />
+                    </button>
+                    <input
+                      ref={importRef}
+                      hidden
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        if (f.size > 2_000_000) {
+                          notify("File exceeds 2 MB");
+                          return;
+                        }
+                        try {
+                          const c = parseCity(await f.text());
+                          c.id = uid("city");
+                          load(c);
+                        } catch (err) {
+                          notify(String(err), "error");
+                        }
+                        e.target.value = "";
+                      }}
+                    />
+                    <button
+                      disabled={!isStudio}
+                      aria-label="Reset scenario"
+                      title="Reset to the built-in demo, original preset or blank city"
+                      onClick={() =>
+                        confirm(
+                          "Reset this city to its built-in demo or original preset? Custom cities become empty. Export or save edits first; the active run will be discarded.",
+                          () => {
+                            const c = city.id.startsWith("demo-")
+                              ? municipalDemo()
+                              : city.preset
+                                ? preset(city.preset)
+                                : blankCity();
+                            c.id = city.id;
+                            setCity(c);
+                            setHeads([]);
+                            setSelection(null);
+                            setPast([]);
+                            setFuture([]);
+                            invalidate();
+                            setWarnings([]);
+                            setDirty(true);
+                          },
+                        )
+                      }
+                    >
+                      <RotateCcw size={16} />
+                    </button>
+                  </section>
+                  {library.length > 0 && (
+                    <div className="saved-list">
+                      <span>Saved in this browser</span>
+                      {library.map((c) => (
+                        <div key={c.id}>
+                          <button onClick={() => load(c)}>{c.name}</button>
+                          <button
+                            aria-label={`Delete saved ${c.name}`}
+                            onClick={() =>
+                              confirm(
+                                `Delete saved city “${c.name}” from this browser? The current open city is retained.`,
+                                () =>
+                                  guard(() => {
+                                    const list = library.filter(
+                                      (x) => x.id !== c.id,
+                                    );
+                                    saveLibrary(localStorage, list);
+                                    setLibrary(list);
+                                  }),
+                              )
+                            }
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
               {showSettings && (
                 <section className="panel">
@@ -824,7 +1304,20 @@ export default function App() {
                 </section>
               )}
               {isOps && (
-                <section className="operations-toolbar panel">
+                <div className="readiness-banner">
+                  <b>Next: {workspaceStatus(city, plan, sim).stage}</b>
+                  <span>
+                    {workspaceStatus(city, plan, sim).planReason ??
+                      "Review responsibilities and truck settings, then plan collection."}
+                  </span>
+                </div>
+              )}
+              {isOps && (
+                <section
+                  className="operations-toolbar panel"
+                  id="zone-setup"
+                  tabIndex={-1}
+                >
                   <div>
                     <span className="eyebrow">01 / DEFINE YOUR ZONES</span>
                     <h3>Give every neighbourhood a head start.</h3>
@@ -880,154 +1373,54 @@ export default function App() {
                       <p>Set node types to HEAD in City Studio first.</p>
                     )}
                   </fieldset>
-                  <button className="primary" onClick={generate}>
+                  <p className="setup-note">
+                    Choose {city.settings.zoneCount} distinct heads below. Each
+                    zone must have a road path to its bins and back.
+                  </p>
+                  <button
+                    className="primary"
+                    disabled={!!sim || heads.length !== city.settings.zoneCount}
+                    onClick={generate}
+                  >
                     <GitBranch size={16} /> Generate zones
                   </button>
                 </section>
               )}
-              <section className="city-panel">
-                <div className="city-panel-header">
-                  <div>
-                    <span className="eyebrow">
-                      {isStudio ? "CITY STUDIO" : "LIVE SIMULATION MAP"}
-                    </span>
-                    <h3>
-                      {isStudio
-                        ? "Your city. Your connections."
-                        : "The bigger picture."}
-                    </h3>
-                  </div>
-                  <div className="map-tools">
-                    <div
-                      className="mode-switch"
-                      aria-label="Map interaction mode"
-                    >
-                      <button
-                        aria-pressed={!isStudio && !isSim}
-                        onClick={() => setPage("Overview")}
-                      >
-                        View map
-                      </button>
-                      <button
-                        aria-pressed={isStudio}
-                        onClick={() => setPage("City Studio")}
-                      >
-                        Edit map
-                      </button>
-                      <button
-                        aria-pressed={isSim}
-                        onClick={() => setPage("Collection Simulator")}
-                      >
-                        Simulate
-                      </button>
-                    </div>
-                    {isStudio && (
-                      <>
-                        <button onClick={() => addNode()}>
-                          <Plus size={15} /> Node
-                        </button>
-                        <button
-                          aria-label="Undo edit"
-                          disabled={!past.length}
-                          onClick={() => undo()}
-                        >
-                          <Undo2 size={16} />
-                        </button>
-                        <button
-                          aria-label="Redo edit"
-                          disabled={!future.length}
-                          onClick={() => undo(true)}
-                        >
-                          <Redo2 size={16} />
-                        </button>
-                      </>
-                    )}
-                    <fieldset
-                      className="inline-edit-tools"
-                      disabled={!(isStudio || isOps) || !!sim}
-                    >
-                      <label className="seed-field">
-                        Seed
-                        <input
-                          type="number"
-                          value={city.settings.seed}
-                          onChange={(e) =>
-                            change({
-                              ...city,
-                              settings: {
-                                ...city.settings,
-                                seed: Number(e.target.value),
-                              },
-                            })
-                          }
-                        />
-                      </label>
-                      <button onClick={() => change(randomize(city))}>
-                        <RefreshCw size={15} /> Randomize fill levels
-                      </button>
-                      <button
-                        aria-label="Generate overflow demo"
-                        title="Fill all simulated bins to 90–100%"
-                        onClick={() => change(randomize(city, true))}
-                      >
-                        <Sparkles size={16} />
-                      </button>
-                      <button
-                        aria-label="Scenario settings"
-                        onClick={() => setShowSettings((s) => !s)}
-                      >
-                        <Settings2 size={17} />
-                      </button>
-                    </fieldset>
-                  </div>
-                </div>
-                <div
-                  className={`canvas-layout ${isStudio || selection ? "has-inspector" : ""}`}
+              {isDashboard ? (
+                <Dashboard
+                  city={city}
+                  plan={plan}
+                  sim={sim}
+                  map={mapPanel}
+                  filter={binFilter}
+                  showReview={showReview}
+                  onReview={review}
+                  onInspect={(id) => {
+                    setSelection({ kind: "bin", id });
+                    setFocusTarget({ id: "city-map", stamp: Date.now() });
+                  }}
+                  onNavigate={navigate}
+                  onPlan={() => {
+                    optimize();
+                    navigate("Collection Simulator");
+                  }}
+                  onStart={startRun}
+                  onDemo={openDemo}
+                />
+              ) : null}
+              {isSim && collectionControls}
+              {(isStudio || isSim) && mapPanel}
+              {isOps && (
+                <details
+                  className="zone-map-disclosure"
+                  open={opsMapOpen}
+                  onToggle={(e) => setOpsMapOpen(e.currentTarget.open)}
                 >
-                  <CityCanvas
-                    key={city.id}
-                    city={city}
-                    simulationView={isSim}
-                    plan={plan}
-                    simulation={sim}
-                    selection={selection}
-                    onSelect={setSelection}
-                    onMove={move}
-                    onCreate={addNode}
-                    editing={isStudio && !sim}
-                  />
-                  {(isStudio || selection) && (
-                    <Inspector
-                      city={city}
-                      selection={selection}
-                      select={setSelection}
-                      change={change}
-                      confirm={confirm}
-                      report={notify}
-                      readOnly={!isStudio || !!sim}
-                      edit={() => setPage("City Studio")}
-                    />
-                  )}
-                </div>
-                <div className="canvas-footer">
-                  <span>
-                    <i className="live-dot" />{" "}
-                    {sim?.running ? "Collection running" : "Scenario ready"}{" "}
-                    <span className="muted">
-                      · Directed roads · Edge weights in km
-                    </span>
-                  </span>
-                  <span>
-                    {plan
-                      ? "Current collection plan"
-                      : city.zones.length
-                        ? "Zones ready · Collection plan needed"
-                        : "Zones need generation"}{" "}
-                    <ChevronRight size={13} />
-                  </span>
-                </div>
-              </section>
-              {warnings.length > 0 && (
+                  <summary>Inspect zone map & responsibilities</summary>
+                  {mapPanel}
+                </details>
+              )}
+              {!isDashboard && warnings.length > 0 && (
                 <section className="warning-list">
                   <b>
                     {warnings.length} operational warning
@@ -1044,250 +1437,117 @@ export default function App() {
                   )}
                 </section>
               )}
-              <ZoneWorkload city={city} plan={plan} />
-              <div className="below-grid">
-                <section className="panel">
-                  <div className="section-heading">
-                    <div>
-                      <span className="eyebrow">02 / ZONE RESPONSIBILITY</span>
-                      <h3>Local focus. Citywide impact.</h3>
-                    </div>
-                    <button
-                      onClick={() => setPage("Zone & Fleet Operations")}
-                      aria-label="View zone operations"
-                    >
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </div>
-                  {city.zones.length ? (
-                    <div className="zones-list">
-                      {city.zones.map((z) => (
-                        <button
-                          key={z.id}
-                          className="zone-card"
-                          onClick={() =>
-                            setSelection({ kind: "zone", id: z.id })
-                          }
-                        >
-                          <i style={{ background: z.color }} />
-                          <div>
-                            <b>{z.name}</b>
-                            <small>
-                              {
-                                city.nodes.find((n) => n.id === z.headNodeId)
-                                  ?.label
-                              }{" "}
-                              · {z.binIds.length} bins
-                            </small>
-                          </div>
-                          <span>
-                            {
-                              city.bins.filter(
-                                (b) =>
-                                  z.binIds.includes(b.id) &&
-                                  b.fillPercent >=
-                                    city.settings.pickupThreshold,
-                              ).length
-                            }{" "}
-                            pickups
-                          </span>
-                          <ChevronRight size={14} />
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="empty-inline">
-                      <GitBranch />
-                      <p>
-                        Choose heads and generate graph-based zones.
-                        <br />
-                        <small>
-                          Directed round-trip feasibility is checked for each
-                          bin.
-                        </small>
-                      </p>
-                    </div>
-                  )}
-                </section>
-                <section className="panel">
-                  <div className="section-heading">
-                    <div>
-                      <span className="eyebrow">03 / RESOURCES THAT MOVE</span>
-                      <h3>Your collection fleet</h3>
-                    </div>
-                    <button
-                      title="Add truck"
-                      aria-label="Add truck"
-                      disabled={page === "Overview" || isSim || !!sim}
-                      onClick={() => {
-                        if (sim) {
-                          notify(
-                            "Reset the collection run before editing its scenario.",
-                          );
-                          return;
-                        }
-                        const id = uid("truck");
-                        change({
-                          ...city,
-                          trucks: [
-                            ...city.trucks,
-                            {
-                              id,
-                              label: `Truck ${city.trucks.length + 1}`,
-                              capacityBinUnits: 8,
-                              speedGrade: 2,
-                              available: true,
-                            },
-                          ],
-                        });
-                        setSelection({ kind: "truck", id });
-                      }}
-                    >
-                      <Plus size={17} />
-                    </button>
-                  </div>
-                  {city.trucks.map((t) => {
-                    const trip = sim
-                        ? currentTrip(
-                            sim.plan.trips.filter((p) => p.truckId === t.id),
-                            sim.time,
-                          )
-                        : undefined,
-                      s = trip && sim ? tripState(trip, sim.time) : null;
-                    return (
-                      <button
-                        className="fleet-row"
-                        key={t.id}
-                        onClick={() =>
-                          setSelection({ kind: "truck", id: t.id })
-                        }
-                      >
-                        <span className="mini-icon">
-                          <Truck size={20} />
-                        </span>
-                        <div>
-                          <b>{t.label}</b>
-                          <small>
-                            {t.capacityBinUnits} units ·{" "}
-                            {city.settings.speeds[t.speedGrade]} km/h
-                            {s ? ` · load ${fixed(s.load)}` : ""}
-                          </small>
-                        </div>
-                        <span className="pill">
-                          {s?.state ??
-                            (sim &&
-                            sim.time >=
-                              Math.max(
-                                0,
-                                ...sim.plan.trips
-                                  .filter((p) => p.truckId === t.id)
-                                  .map((t) => t.end),
-                              )
-                              ? "COMPLETED"
-                              : t.available
-                                ? "AVAILABLE"
-                                : "UNAVAILABLE")}
-                        </span>
-                      </button>
-                    );
-                  })}
-                  {!city.trucks.length && (
-                    <p>No trucks. Add a truck to schedule collection.</p>
-                  )}
-                </section>
-              </div>
-              <section className="panel collection-panel">
-                <div>
-                  <span className="eyebrow">04 / SMARTER COLLECTION</span>
-                  <h3>
-                    {sim ? "Collection in motion" : "Ready when your city is."}
-                  </h3>
-                  <p>
-                    {sim
-                      ? `${sim.time.toFixed(1)} / ${sim.plan.duration.toFixed(1)} virtual minutes · ${sim.completed.length} completed stops`
-                      : "Plan current pickups across every zone, without exceeding truck capacity."}
-                  </p>
-                </div>
-                <div className="playback">
-                  <button onClick={optimize} disabled={!!sim}>
-                    <Route size={16} /> Optimize all zones
-                  </button>
-                  {!sim ? (
-                    <button
-                      className="primary"
-                      disabled={!plan?.trips.length}
-                      onClick={() => {
-                        if (plan) {
-                          const s = startSimulation(city, plan);
-                          setSim(s);
-                          setPage("Collection Simulator");
-                        }
-                      }}
-                    >
-                      <Play size={16} /> Start collection
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        className="primary"
-                        disabled={sim.time >= sim.plan.duration}
-                        onClick={() =>
-                          setSim({
-                            ...sim,
-                            running:
-                              sim.time < sim.plan.duration && !sim.running,
-                          })
-                        }
-                      >
-                        {sim.running ? <Pause size={16} /> : <Play size={16} />}{" "}
-                        {sim.running ? "Pause" : "Resume"}
-                      </button>
+              {(isOps || isAnalytics) && (
+                <ZoneWorkload city={city} plan={plan} />
+              )}
+              {isOps && (
+                <div className="below-grid operations-config">
+                  <section
+                    className="panel"
+                    id="zone-responsibilities"
+                    tabIndex={-1}
+                  >
+                    <div className="section-heading">
+                      <div>
+                        <span className="eyebrow">ZONE RESPONSIBILITY</span>
+                        <h3>Zone responsibilities</h3>
+                      </div>
                       <button
                         onClick={() => {
-                          if (sim.running) setSim({ ...sim, running: false });
-                          else step();
+                          setOpsMapOpen(true);
+                          setFocusTarget({ id: "city-map", stamp: Date.now() });
                         }}
-                        disabled={sim.running || sim.time >= sim.plan.duration}
+                        aria-label="View zone operations"
                       >
-                        <SkipForward size={16} /> Step +1 min
+                        <MoreHorizontal size={18} />
                       </button>
-                      <button onClick={resetSim}>
-                        <RotateCcw size={16} /> Reset run
-                      </button>
-                      {sim.time >= sim.plan.duration && (
-                        <button
-                          onClick={() => {
-                            setCity(clone(sim.original));
-                            setSim(startSimulation(sim.original, sim.plan));
-                            setDirty(true);
-                          }}
-                        >
-                          <Play size={16} />
-                          Replay collection
-                        </button>
-                      )}
-                    </>
-                  )}
-                  <label>
-                    Speed
-                    <select
-                      value={speed}
-                      onChange={(e) => setSpeed(Number(e.target.value))}
-                    >
-                      {[1, 5, 10, 30, 60].map((s) => (
-                        <option key={s} value={s}>
-                          {s}×
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    </div>
+                    {city.zones.length ? (
+                      <div className="zones-list">
+                        {city.zones.map((z) => (
+                          <button
+                            key={z.id}
+                            className="zone-card"
+                            onClick={() => {
+                              setSelection({ kind: "zone", id: z.id });
+                              setOpsMapOpen(true);
+                              setFocusTarget({
+                                id: "city-map",
+                                stamp: Date.now(),
+                              });
+                            }}
+                          >
+                            <i style={{ background: z.color }} />
+                            <div>
+                              <b>{z.name}</b>
+                              <small>
+                                {
+                                  city.nodes.find((n) => n.id === z.headNodeId)
+                                    ?.label
+                                }{" "}
+                                · {z.binIds.length} bins
+                              </small>
+                            </div>
+                            <span>
+                              {
+                                city.bins.filter(
+                                  (b) =>
+                                    z.binIds.includes(b.id) &&
+                                    b.fillPercent >=
+                                      city.settings.pickupThreshold,
+                                ).length
+                              }{" "}
+                              pickups
+                            </span>
+                            <ChevronRight size={14} />
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="empty-inline">
+                        <GitBranch />
+                        <p>
+                          Choose heads and generate graph-based zones.
+                          <br />
+                          <small>
+                            Directed round-trip feasibility is checked for each
+                            bin.
+                          </small>
+                        </p>
+                      </div>
+                    )}
+                  </section>
+                  <FleetPanel
+                    city={city}
+                    change={change}
+                    locked={!!sim}
+                    confirm={confirm}
+                  />
                 </div>
-                {sim && (
-                  <progress max={sim.plan.duration || 1} value={sim.time} />
-                )}
-              </section>
-              {plan && <RunProgress city={city} plan={plan} sim={sim} />}
-              {(plan || isSim) && (
+              )}
+              {isAnalytics && (
+                <section className="panel analytics-context">
+                  <h2>
+                    {sim
+                      ? "Results from the current collection run"
+                      : "Plan estimates · collection not run"}
+                  </h2>
+                  <p>
+                    {sim
+                      ? "Collected stops and travelled distance come from actual playback. Unserved pickups remain separate from scheduled work."
+                      : "The figures below describe a calculated plan. Start collection to measure simulated progress; saving a city does not persist the run history."}
+                  </p>
+                  <button onClick={() => navigate("Collection Simulator")}>
+                    {sim
+                      ? "Inspect collection playback"
+                      : "Go to collection simulator"}
+                  </button>
+                </section>
+              )}
+              {(isSim || isAnalytics) && plan && (
+                <RunProgress city={city} plan={plan} sim={sim} />
+              )}
+              {isSim && (
                 <section className="panel">
                   <h3>Trip schedule & pending work</h3>
                   {plan ? (
@@ -1356,7 +1616,7 @@ export default function App() {
                   )}
                 </section>
               )}
-              {(isAnalytics || page === "Overview") && (
+              {isAnalytics && (
                 <>
                   <section className="panel">
                     <div className="section-heading">
@@ -1366,7 +1626,7 @@ export default function App() {
                         </span>
                         <h3>Every kilometre accounted for.</h3>
                       </div>
-                      <button onClick={() => setShowSettings(true)}>
+                      <button onClick={openSettings}>
                         <Settings2 size={15} /> Cost assumptions
                       </button>
                     </div>
@@ -1499,46 +1759,7 @@ export default function App() {
                   </div>
                 </>
               )}
-              <section className="panel virtual-flow">
-                <span className="eyebrow">
-                  EDUCATIONAL FLOW · ALL EVENTS SIMULATED
-                </span>
-                <h3>From observation to action.</h3>
-                <div>
-                  {[
-                    "Virtual bin",
-                    "Simulated telemetry",
-                    "Browser storage",
-                    "Threshold alerts",
-                    "Directed route engine",
-                  ].map((name, i) => (
-                    <div key={name}>
-                      <span>0{i + 1}</span>
-                      <b>{name}</b>
-                      <small>
-                        {i === 0
-                          ? `${city.bins.length} virtual bins`
-                          : i === 1
-                            ? `Latest virtual hour ${(Math.max(0, ...city.bins.flatMap((b) => b.history.map((h) => h.time))) / 3600000).toFixed(1)}`
-                            : i === 2
-                              ? dirty
-                                ? "Unsaved working state"
-                                : "Save locally to persist"
-                              : i === 3
-                                ? `${eligible.length} threshold warnings`
-                                : plan
-                                  ? `${plan.trips.length} computed trips`
-                                  : "Awaiting calculation"}
-                      </small>
-                    </div>
-                  ))}
-                </div>
-                <p className="small">
-                  This local flow does not write to Supabase. Browser storage is
-                  updated only by Save scenario.
-                </p>
-              </section>
-              {sim && (
+              {isSim && sim && (
                 <section className="panel">
                   <h3>Simulated collection event history</h3>
                   {[...sim.events].reverse().map((e, i) => (
@@ -1554,7 +1775,9 @@ export default function App() {
           )}
           <footer>
             CleanCity{" "}
-            <span>Designed for clarity. Built for a cleaner tomorrow.</span>
+            <span>
+              Local workspace · Save city inputs · Export JSON backups
+            </span>
             <span>
               {physical
                 ? "PHYSICAL DATA · CLOUD REQUIRED"
@@ -1564,8 +1787,17 @@ export default function App() {
         </main>
       </div>
       {notice && (
-        <div className="toast" role="status">
-          <Check size={18} />
+        <div
+          className={`toast toast-${noticeKind}`}
+          role={noticeKind === "error" ? "alert" : "status"}
+        >
+          {noticeKind === "error" ? (
+            <AlertTriangle size={18} />
+          ) : noticeKind === "success" ? (
+            <Check size={18} />
+          ) : (
+            <CircleHelp size={18} />
+          )}
           <span>{notice}</span>
           <button
             aria-label="Dismiss notification"
@@ -1604,30 +1836,6 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-function Metric({
-  label,
-  value,
-  detail,
-  icon,
-  warning = false,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  icon: React.ReactNode;
-  warning?: boolean;
-}) {
-  return (
-    <div className="metric">
-      <div>
-        <span>{label}</span>
-        <i className={warning ? "warm" : ""}>{icon}</i>
-      </div>
-      <strong>{value}</strong>
-      <small>{detail}</small>
     </div>
   );
 }
