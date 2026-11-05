@@ -49,3 +49,7 @@ Acceptance: compare identical service demand/constraints before claiming savings
 - Scope additions or optional promotions require a later explicit decision. Cloud and physical integration remain separate; these three prompts do not authorize their configuration or deployment.
 
 Next action: stop after the documentation commit and await the **Upgrade A implementation prompt**.
+
+## Upgrade A execution record — 5 November 2026
+
+A separate implementation prompt authorized Upgrade A after this planning checkpoint. City Studio authoring, irregular generation, layered map navigation and editing/status corrections are now implemented. See [the Upgrade A verification record](upgrade-a-verification.md) for exact coverage, real browser evidence, automated gates and deliberate limitations. The audit and U01–U18/N01–N08 mappings above remain preserved. Upgrade B and C implementation has not started; each still requires its own authorization.

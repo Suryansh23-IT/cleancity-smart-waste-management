@@ -21,10 +21,12 @@ export function operationProgress(
       id: truck.id,
       label: truck.label,
       state: sim
-        ? (state?.state ?? "AVAILABLE")
-        : trips.length
-          ? "PLANNED"
-          : "AVAILABLE",
+        ? (state?.state ?? (truck.available ? "AVAILABLE" : "UNAVAILABLE"))
+        : !truck.available
+          ? "UNAVAILABLE"
+          : trips.length
+            ? "PLANNED"
+            : "AVAILABLE",
       from: state?.from,
       to: state?.to,
       fraction: state?.fraction ?? 0,

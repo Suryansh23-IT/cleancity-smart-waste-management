@@ -10,7 +10,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --maxWorkers=1",
+    "test": "vitest run --maxWorkers=1 --exclude build/**",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

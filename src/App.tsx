@@ -55,6 +55,8 @@ import { pathFinder } from "./core/graph";
 import CityCanvas, { Selection } from "./components/CityCanvas";
 import Inspector from "./components/Inspector";
 import PhysicalLab from "./components/PhysicalLab";
+import StudioTools from "./components/StudioTools";
+import { routingGraphChanged, operationalChanged } from "./core/studio";
 import {
   RunProgress,
   ZoneWorkload,
@@ -130,8 +132,32 @@ export default function App() {
   };
   function change(next: City, graph = false): boolean {
     try {
+      if (page === "Overview" || page === "Collection Simulator")
+        throw Error(
+          "City View is read-only. Switch to Edit map or operations to make changes.",
+        );
+      for (const r of next.roads) {
+        if (
+          !city.roads.some(
+            (old) =>
+              old.id === r.id &&
+              old.fromNodeId === r.fromNodeId &&
+              old.toNodeId === r.toNodeId,
+          ) &&
+          next.roads.some(
+            (other) =>
+              other.id !== r.id &&
+              other.fromNodeId === r.fromNodeId &&
+              other.toNodeId === r.toNodeId,
+          )
+        )
+          throw Error(
+            "This directed road already exists. Edit its existing weight or direction.",
+          );
+      }
       if (sim)
         throw Error("Reset the collection run before editing its scenario.");
+      graph = graph && routingGraphChanged(city, next);
       const c = graph
         ? {
             ...next,
@@ -146,7 +172,7 @@ export default function App() {
       setFuture([]);
       setCity(c);
       setDirty(true);
-      invalidate();
+      if (operationalChanged(city, c)) invalidate();
       setWarnings(
         graph
           ? ["Road graph changed. Generate zones again before planning."]
@@ -194,11 +220,14 @@ export default function App() {
     guard(() => {
       if (sim) throw Error("Reset collection before regenerating zones");
       const result = autoZone(city, heads);
-      change({
-        ...city,
-        zones: result.zones,
-        trucks: city.trucks.map((t) => ({ ...t, zoneId: undefined })),
-      });
+      if (
+        !change({
+          ...city,
+          zones: result.zones,
+          trucks: city.trucks.map((t) => ({ ...t, zoneId: undefined })),
+        })
+      )
+        return;
       setWarnings(result.warnings);
       notify(
         `Generated ${result.zones.length} zones · ${result.warnings.length} feasibility warnings`,
@@ -311,14 +340,10 @@ export default function App() {
         nodes: city.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)),
       });
     else {
-      const nearest = [...city.nodes].sort(
-        (a, b) =>
-          Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y),
-      )[0];
-      if (nearest && change(relocateBin(city, id, nearest.id)))
-        notify(
-          "Bin snapped to road node; reassign its zone or regenerate zones",
-        );
+      change({
+        ...city,
+        bins: city.bins.map((b) => (b.id === id ? { ...b, position: p } : b)),
+      });
     }
   };
   const addNode = (p = { x: city.width / 2, y: city.height / 2 }) => {
@@ -383,7 +408,9 @@ export default function App() {
     isSim = page === "Collection Simulator",
     isAnalytics = page === "Analytics & What-If";
   return (
-    <div className={`app ${physical ? "lab-theme" : ""}`}>
+    <div
+      className={`app ${physical ? "lab-theme" : ""} ${page === "City Studio" ? "studio-workspace" : ""}`}
+    >
       <aside className="sidebar">
         <a
           className="brand"
@@ -544,6 +571,14 @@ export default function App() {
                   icon={<Route />}
                 />
               </div>
+              {isStudio && (
+                <StudioTools
+                  city={city}
+                  change={change}
+                  confirm={confirm}
+                  load={(c) => load({ ...c, id: uid("city") })}
+                />
+              )}
               <section className="scenario-bar">
                 <div className="scenario-title">
                   <span className="mini-icon">
@@ -640,6 +675,7 @@ export default function App() {
                   }}
                 />
                 <button
+                  disabled={!isStudio}
                   aria-label="Reset scenario"
                   title="Reset to original preset / blank"
                   onClick={() =>
@@ -787,7 +823,7 @@ export default function App() {
                   </form>
                 </section>
               )}
-              {(isOps || page === "Overview") && (
+              {isOps && (
                 <section className="operations-toolbar panel">
                   <div>
                     <span className="eyebrow">01 / DEFINE YOUR ZONES</span>
@@ -906,45 +942,52 @@ export default function App() {
                         </button>
                       </>
                     )}
-                    <label className="seed-field">
-                      Seed
-                      <input
-                        type="number"
-                        value={city.settings.seed}
-                        onChange={(e) =>
-                          change({
-                            ...city,
-                            settings: {
-                              ...city.settings,
-                              seed: Number(e.target.value),
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <button onClick={() => change(randomize(city))}>
-                      <RefreshCw size={15} /> Randomize fill levels
-                    </button>
-                    <button
-                      aria-label="Generate overflow demo"
-                      title="Fill all simulated bins to 90–100%"
-                      onClick={() => change(randomize(city, true))}
+                    <fieldset
+                      className="inline-edit-tools"
+                      disabled={!(isStudio || isOps) || !!sim}
                     >
-                      <Sparkles size={16} />
-                    </button>
-                    <button
-                      aria-label="Scenario settings"
-                      onClick={() => setShowSettings((s) => !s)}
-                    >
-                      <Settings2 size={17} />
-                    </button>
+                      <label className="seed-field">
+                        Seed
+                        <input
+                          type="number"
+                          value={city.settings.seed}
+                          onChange={(e) =>
+                            change({
+                              ...city,
+                              settings: {
+                                ...city.settings,
+                                seed: Number(e.target.value),
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <button onClick={() => change(randomize(city))}>
+                        <RefreshCw size={15} /> Randomize fill levels
+                      </button>
+                      <button
+                        aria-label="Generate overflow demo"
+                        title="Fill all simulated bins to 90–100%"
+                        onClick={() => change(randomize(city, true))}
+                      >
+                        <Sparkles size={16} />
+                      </button>
+                      <button
+                        aria-label="Scenario settings"
+                        onClick={() => setShowSettings((s) => !s)}
+                      >
+                        <Settings2 size={17} />
+                      </button>
+                    </fieldset>
                   </div>
                 </div>
                 <div
                   className={`canvas-layout ${isStudio || selection ? "has-inspector" : ""}`}
                 >
                   <CityCanvas
+                    key={city.id}
                     city={city}
+                    simulationView={isSim}
                     plan={plan}
                     simulation={sim}
                     selection={selection}
@@ -961,6 +1004,8 @@ export default function App() {
                       change={change}
                       confirm={confirm}
                       report={notify}
+                      readOnly={!isStudio || !!sim}
+                      edit={() => setPage("City Studio")}
                     />
                   )}
                 </div>
@@ -1073,6 +1118,7 @@ export default function App() {
                     <button
                       title="Add truck"
                       aria-label="Add truck"
+                      disabled={page === "Overview" || isSim || !!sim}
                       onClick={() => {
                         if (sim) {
                           notify(

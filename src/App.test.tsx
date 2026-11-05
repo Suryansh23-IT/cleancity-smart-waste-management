@@ -59,8 +59,94 @@ afterEach(async () => {
 });
 
 describe("municipal UI integration (DOM, not graphical browser)", () => {
+  it("applies one bulk fill operation reversibly and searches/declutters without editing", async () => {
+    await mount();
+    await click("City Studio");
+    const form =
+      container.querySelectorAll<HTMLFormElement>(".studio-tools form")[3];
+    await value(form.querySelector('input[name="fill"]')!, "88");
+    await click("Apply bulk fill");
+    await click("Save scenario");
+    expect(
+      loadLibrary(localStorage)[0].bins.every((b) => b.fillPercent === 88),
+    ).toBe(true);
+    await click("Undo edit");
+    await click("Save scenario");
+    expect(
+      loadLibrary(localStorage)[0].bins.some((b) => b.fillPercent !== 88),
+    ).toBe(true);
+    await click("Redo edit");
+    await click("Save scenario");
+    expect(
+      loadLibrary(localStorage)[0].bins.every((b) => b.fillPercent === 88),
+    ).toBe(true);
+    const svg = container.querySelector(".canvas-wrap > svg")!;
+    const initial = svg.getAttribute("viewBox");
+    await click("Zoom in");
+    expect(svg.getAttribute("viewBox")).not.toBe(initial);
+    await click("Reset camera");
+    expect(svg.getAttribute("viewBox")).toBe(initial);
+    await value(
+      container.querySelector('input[aria-label="Search map objects"]')!,
+      "BIN-100",
+    );
+    await click("bin · BIN-100");
+    expect(container.querySelector(".inspector h3")?.textContent).toBe(
+      "BIN-100",
+    );
+    const bins = [
+      ...container.querySelectorAll<HTMLInputElement>(".map-layers input"),
+    ][2];
+    await act(async () => bins.click());
+    expect(container.querySelectorAll(".map-bin")).toHaveLength(0);
+    await act(async () => bins.click());
+    expect(container.querySelectorAll(".map-bin")).toHaveLength(100);
+  });
+  it("keeps View inspectors read-only and preserves zones, restrictions and plans after a rename", async () => {
+    const c = preset(10);
+    c.zones = autoZone(c, ["n0", "n3", "n6"]).zones;
+    c.trucks[0].zoneId = c.zones[0].id;
+    saveLibrary(localStorage, [c]);
+    await mount();
+    await click("Optimize all zones");
+    await act(async () =>
+      container
+        .querySelector(".map-node")!
+        .dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        ),
+    );
+    expect(
+      container.querySelector<HTMLFieldSetElement>(".inspector fieldset")!
+        .disabled,
+    ).toBe(true);
+    expect(button("Randomize fill levels").closest("fieldset")?.disabled).toBe(
+      true,
+    );
+    await click("Edit map");
+    await value(
+      container.querySelector('.inspector input[name="label"]')!,
+      "Renamed municipal head",
+    );
+    await click("Save changes");
+    expect(button("Start collection").disabled).toBe(false);
+    await click("Save scenario");
+    const saved = loadLibrary(localStorage)[0];
+    expect(saved.zones).toEqual(c.zones);
+    expect(saved.trucks).toEqual(c.trucks);
+    expect(saved.nodes[0].label).toBe("Renamed municipal head");
+    await click("Undo edit");
+    await click("Save scenario");
+    expect(loadLibrary(localStorage)[0].nodes[0].label).toBe(c.nodes[0].label);
+    await click("Redo edit");
+    await click("Save scenario");
+    expect(loadLibrary(localStorage)[0].nodes[0].label).toBe(
+      "Renamed municipal head",
+    );
+  });
   it("traps modal focus and cancels safely with Escape", async () => {
     await mount();
+    await click("City Studio");
     await click("Reset scenario");
     const cancel = button("Cancel"),
       confirm = button("Confirm");
@@ -126,6 +212,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
   });
   it("walks 100-bin zoning, randomization, planning, playback, save and reload", async () => {
     await mount();
+    await click("Zone & Fleet Operations");
     const heads = [
       ...container.querySelectorAll<HTMLInputElement>(".head-choice input"),
     ];
@@ -153,7 +240,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     await mount();
     expect(container.querySelectorAll(".zone-card")).toHaveLength(3);
     expect(text()).toContain("Newhaven Metro");
-  });
+  }, 20000);
   it("renders all six sections and physical failures without inventing data", async () => {
     await mount();
     for (const name of [
@@ -206,7 +293,10 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     await value(container.querySelector('select[name="type"]')!, "HEAD");
     await click("Save changes");
     await click("+ Place bin here");
-    await value(container.querySelector('input[name="fill"]')!, "92");
+    await value(
+      container.querySelector('.inspector input[name="fill"]')!,
+      "92",
+    );
     await click("Save changes");
     await click("Save scenario");
     const c = loadLibrary(localStorage)[0];

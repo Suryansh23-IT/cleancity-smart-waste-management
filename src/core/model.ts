@@ -12,6 +12,7 @@ export interface Road {
   toNodeId: string;
   distanceKm: number;
   speedGrade?: number;
+  roadClass?: "ARTERIAL" | "LOCAL";
   name?: string;
 }
 export interface Reading {
@@ -22,6 +23,7 @@ export interface Bin {
   id: string;
   name: string;
   roadNodeId: string;
+  position?: { x: number; y: number };
   fillPercent: number;
   capacityBinUnits: number;
   source: "SIMULATED";
@@ -162,6 +164,8 @@ export function validateCity(value: unknown): string[] {
   });
   c.roads.forEach((r) => {
     if (
+      (r.roadClass !== undefined &&
+        !["ARTERIAL", "LOCAL"].includes(r.roadClass)) ||
       (r.name !== undefined &&
         (typeof r.name !== "string" || r.name.length > 160)) ||
       !nodes.has(r.fromNodeId) ||
@@ -179,6 +183,14 @@ export function validateCity(value: unknown): string[] {
   });
   c.bins.forEach((b) => {
     if (
+      (b.position !== undefined &&
+        (!b.position ||
+          !Number.isFinite(b.position.x) ||
+          !Number.isFinite(b.position.y) ||
+          b.position.x < 0 ||
+          b.position.y < 0 ||
+          b.position.x > c.width ||
+          b.position.y > c.height)) ||
       !label(b.name) ||
       !nodes.has(b.roadNodeId) ||
       b.source !== "SIMULATED" ||

@@ -1690,6 +1690,35 @@ td small {
   box-shadow: 0 1px 4px #173a2420;
 }
 /* Tables scroll inside their cards instead of widening the mobile document. */
+.inline-edit-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.inspector form > fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+fieldset:disabled {
+  opacity: 0.65;
+}
+.canvas-wrap > svg {
+  touch-action: none;
+  background: #f3f6f2;
+}
+.map-bin:focus-visible,
+.map-node:focus-visible,
+.road:focus-visible {
+  outline: 2px solid #1648b3;
+}
 .panel,
 .below-grid,
 .comparison,
@@ -1706,5 +1735,167 @@ td small {
 @media (max-width: 850px) {
   .below-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+.studio-workspace .stats,
+.studio-workspace .page-heading p {
+  display: none;
+}
+.studio-workspace .page-heading {
+  margin-bottom: 14px;
+}
+.studio-workspace .canvas-wrap,
+.studio-workspace .inspector {
+  height: 650px;
+  max-height: 650px;
+}
+.studio-tools summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.studio-tools form + form {
+  border-top: 1px solid #dce4e9;
+  margin-top: 18px;
+  padding-top: 16px;
+}
+.map-search-results {
+  position: absolute;
+  right: 15px;
+  top: 55px;
+  z-index: 5;
+  background: white;
+  border: 1px solid #cbd5e1;
+  max-height: 300px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+}
+.map-search-results button {
+  border: 0;
+  justify-content: flex-start;
+}
+.map-layers {
+  position: absolute;
+  z-index: 3;
+  left: 16px;
+  top: 48px;
+  background: #ffffffee;
+  border: 1px solid #dce4e9;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 11px;
+}
+.map-layers label {
+  flex-direction: row;
+  margin-top: 8px;
+}
+.zoom input {
+  width: 200px;
+  font-size: 11px;
+}
+.canvas-wrap svg {
+  cursor: grab;
+}
+.map-node,
+.map-bin {
+  cursor: pointer;
+}
+.studio-tools .field-row {
+  align-items: end;
+}
+.map-legend {
+  font-size: 9px;
+}
+.studio-workspace .canvas-footer:after {
+  content: "Zone outlines are illustrative; assignments remain authoritative";
+  font-size: 9px;
+  color: #526476;
+}
+@media (max-width: 850px) {
+  .studio-workspace .canvas-wrap {
+    height: 440px;
+  }
+  .studio-workspace .inspector {
+    height: auto;
+    max-height: 450px;
+  }
+  .zoom input {
+    width: 120px;
+  }
+  .canvas-label {
+    max-width: 35%;
+    overflow: hidden;
+  }
+  .zoom {
+    max-width: 65%;
+    flex-wrap: wrap;
+  }
+  .studio-tools .field-row {
+    flex-wrap: wrap;
+  }
+}
+
+/* Keep navigation clear of the city title and make map controls usable on narrow screens. */
+.canvas-label {
+  top: 14px;
+  max-width: calc(100% - 30px);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.zoom {
+  top: 44px;
+  left: 16px;
+  right: auto;
+  max-width: calc(100% - 32px);
+  flex-wrap: wrap;
+  box-shadow: 0 2px 8px #213a2720;
+}
+.map-layers {
+  top: 90px;
+}
+.map-search-results {
+  left: 16px;
+  right: auto;
+  top: 82px;
+  max-width: calc(100% - 32px);
+}
+.map-legend {
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  right: 12px;
+  background: #fffffff2;
+  border-radius: 6px;
+  padding: 7px 9px;
+  pointer-events: none;
+}
+@media (max-width: 700px) {
+  .zoom input {
+    width: 130px;
+    flex: 1;
+    min-width: 90px;
+  }
+  .zoom button {
+    padding: 8px;
+  }
+  .zoom {
+    max-width: calc(100% - 32px);
+  }
+  .map-layers {
+    top: 104px;
+  }
+  .canvas-label {
+    max-width: calc(100% - 30px);
+  }
+  .studio-tools .settings-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .studio-tools input {
+    min-width: 0;
+    width: 100%;
+  }
+  .inline-edit-tools {
+    max-width: 100%;
   }
 }
