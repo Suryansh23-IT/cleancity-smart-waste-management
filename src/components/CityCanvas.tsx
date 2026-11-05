@@ -115,7 +115,7 @@ export default function CityCanvas({
             height="28"
             patternUnits="userSpaceOnUse"
           >
-            <circle cx="1" cy="1" r=".8" fill="#34404f" />
+            <circle cx="1" cy="1" r=".8" fill="#cbd5df" />
           </pattern>
           <marker
             id="arrow"
@@ -125,7 +125,7 @@ export default function CityCanvas({
             refY="3.5"
             orient="auto"
           >
-            <path d="M0,0 L7,3.5 L0,7" fill="#69778c" />
+            <path d="M0,0 L7,3.5 L0,7" fill="#778799" />
           </marker>
         </defs>
         <rect
@@ -189,7 +189,7 @@ export default function CityCanvas({
                 y1={y1}
                 x2={x2}
                 y2={y2}
-                stroke={selection?.id === r.id ? "#62d7af" : "#3e4a5a"}
+                stroke={selection?.id === r.id ? "#047857" : "#a4b1bc"}
                 strokeWidth={selection?.id === r.id ? 4 : 2}
                 markerEnd="url(#arrow)"
               />
@@ -209,7 +209,7 @@ export default function CityCanvas({
               .join(" ")}
             fill="none"
             stroke={
-              city.zones.find((z) => z.id === trip.zoneId)?.color ?? "#62d7af"
+              city.zones.find((z) => z.id === trip.zoneId)?.color ?? "#047857"
             }
             strokeWidth="3"
             strokeOpacity=".65"
@@ -241,18 +241,18 @@ export default function CityCanvas({
             >
               <circle
                 r={n.type === "HEAD" ? 15 : 7}
-                fill={n.type === "HEAD" ? "#182f2c" : "#172231"}
+                fill={n.type === "HEAD" ? "#e3f1e9" : "#ffffff"}
                 stroke={
                   selection?.id === n.id
-                    ? "#fff"
+                    ? "#223c35"
                     : n.type === "HEAD"
-                      ? "#62d7af"
-                      : "#5b687b"
+                      ? "#047857"
+                      : "#718393"
                 }
                 strokeWidth="2"
               />
               {n.type === "HEAD" && (
-                <text textAnchor="middle" y="4" fill="#62d7af" fontSize="11">
+                <text textAnchor="middle" y="4" fill="#047857" fontSize="11">
                   H
                 </text>
               )}
@@ -275,10 +275,10 @@ export default function CityCanvas({
           const s = status(b.fillPercent, city.settings),
             color =
               s === "URGENT"
-                ? "#f78484"
+                ? "#c43c42"
                 : s === "COLLECTION_NEEDED"
-                  ? "#ffbc70"
-                  : "#62d7af";
+                  ? "#b16c0d"
+                  : "#047857";
           return (
             <g
               key={b.id}
@@ -305,7 +305,7 @@ export default function CityCanvas({
                 width="14"
                 height="17"
                 rx="3"
-                fill="#15232b"
+                fill="#ffffff"
                 stroke={selection?.id === b.id ? "white" : color}
                 strokeWidth="1.8"
               />
@@ -342,7 +342,7 @@ export default function CityCanvas({
                   y="-9"
                   width="26"
                   height="18"
-                  fill="#fff"
+                  fill="#223c35"
                   stroke="#0e1823"
                   strokeWidth="3"
                   rx="4"
@@ -365,13 +365,13 @@ export default function CityCanvas({
       )}
       <div className="map-legend">
         <span>
-          <i style={{ background: "#62d7af" }} /> Normal
+          <i style={{ background: "#047857" }} /> Normal
         </span>
         <span>
-          <i style={{ background: "#ffbc70" }} /> Collection needed
+          <i style={{ background: "#b16c0d" }} /> Collection needed
         </span>
         <span>
-          <i style={{ background: "#f78484" }} /> Urgent
+          <i style={{ background: "#c43c42" }} /> Urgent
         </span>
         <span>H · Municipal head</span>
       </div>

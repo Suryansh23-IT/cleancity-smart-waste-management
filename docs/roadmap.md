@@ -1,5 +1,7 @@
 # Completion checkpoints
 
+Latest scoped municipal M1–M3 work is implemented and verified: light UI, fleet/zone progress, both forecast horizons and expanded analytics. See [current acceptance evidence](municipal-acceptance.md). Remaining work begins at the separate C4 physical-cloud boundary; real touch-device verification remains unexecuted. The status table below is retained as the preceding checkpoint baseline.
+
 The approved Final Master Execution Prompt v1.0 replaces the historical day-wise M0-M3/AWS-first software restrictions. Work is completion-based. Physical safety gates remain one -> two -> four; unverified hardware does not block independent municipal software.
 
 | Checkpoint | Current evidence and remaining gate |

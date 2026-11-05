@@ -1,6 +1,6 @@
 import { Reading } from "./model";
-export function forecast(history: Reading[], threshold = 80) {
-  const sorted = history
+export function forecast(history: Reading[], threshold = 80, now?: number) {
+  const valid = history
     .filter(
       (h) =>
         Number.isFinite(h.time) &&
@@ -8,8 +8,16 @@ export function forecast(history: Reading[], threshold = 80) {
         h.fill >= 0 &&
         h.fill <= 100,
     )
-    .sort((a, b) => a.time - b.time)
+    .sort((a, b) => a.time - b.time);
+  const sorted = valid
+    .filter((h, i) => i === valid.length - 1 || h.time !== valid[i + 1].time)
     .slice(-5);
+  if (
+    now !== undefined &&
+    sorted.length &&
+    (now - sorted.at(-1)!.time > 3 * 3600000 || sorted.at(-1)!.time > now)
+  )
+    return { rate: null, hours: null, quality: "Stale or future history" };
   let start = 0;
   for (let i = 1; i < sorted.length; i++)
     if (sorted[i].fill < sorted[i - 1].fill) start = i; // Reset learning after a pickup/drop.

@@ -55,6 +55,12 @@ import { pathFinder } from "./core/graph";
 import CityCanvas, { Selection } from "./components/CityCanvas";
 import Inspector from "./components/Inspector";
 import PhysicalLab from "./components/PhysicalLab";
+import {
+  RunProgress,
+  ZoneWorkload,
+  Forecasts,
+  ComparisonDetails,
+} from "./components/OperationsInsights";
 
 const pages = [
   { name: "Overview", icon: LayoutDashboard },
@@ -255,6 +261,36 @@ export default function App() {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
+  useEffect(() => {
+    if (!dialog) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const modal = document.querySelector<HTMLElement>(".modal");
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setDialog(null);
+      }
+      if (e.key === "Tab" && modal) {
+        const buttons = [
+          ...modal.querySelectorAll<HTMLButtonElement>("button"),
+        ];
+        const first = buttons[0],
+          last = buttons.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", keys);
+    return () => {
+      document.removeEventListener("keydown", keys);
+      previous?.focus();
+    };
+  }, [dialog]);
   const eligible = city.bins.filter(
       (b) => b.fillPercent >= city.settings.pickupThreshold,
     ),
@@ -826,6 +862,29 @@ export default function App() {
                     </h3>
                   </div>
                   <div className="map-tools">
+                    <div
+                      className="mode-switch"
+                      aria-label="Map interaction mode"
+                    >
+                      <button
+                        aria-pressed={!isStudio && !isSim}
+                        onClick={() => setPage("Overview")}
+                      >
+                        View map
+                      </button>
+                      <button
+                        aria-pressed={isStudio}
+                        onClick={() => setPage("City Studio")}
+                      >
+                        Edit map
+                      </button>
+                      <button
+                        aria-pressed={isSim}
+                        onClick={() => setPage("Collection Simulator")}
+                      >
+                        Simulate
+                      </button>
+                    </div>
                     {isStudio && (
                       <>
                         <button onClick={() => addNode()}>
@@ -940,6 +999,7 @@ export default function App() {
                   )}
                 </section>
               )}
+              <ZoneWorkload city={city} plan={plan} />
               <div className="below-grid">
                 <section className="panel">
                   <div className="section-heading">
@@ -1148,6 +1208,18 @@ export default function App() {
                       <button onClick={resetSim}>
                         <RotateCcw size={16} /> Reset run
                       </button>
+                      {sim.time >= sim.plan.duration && (
+                        <button
+                          onClick={() => {
+                            setCity(clone(sim.original));
+                            setSim(startSimulation(sim.original, sim.plan));
+                            setDirty(true);
+                          }}
+                        >
+                          <Play size={16} />
+                          Replay collection
+                        </button>
+                      )}
                     </>
                   )}
                   <label>
@@ -1168,6 +1240,7 @@ export default function App() {
                   <progress max={sim.plan.duration || 1} value={sim.time} />
                 )}
               </section>
+              {plan && <RunProgress city={city} plan={plan} sim={sim} />}
               {(plan || isSim) && (
                 <section className="panel">
                   <h3>Trip schedule & pending work</h3>
@@ -1305,7 +1378,8 @@ export default function App() {
                             </span>
                           </div>
                         </div>
-                        <p className="small">
+                        <div className="small">
+                          <ComparisonDetails plan={plan} baseline={baseline} />
                           Same eligible pickup set, fleet, capacity and speed
                           assumptions. Greedy strategies can serve different
                           feasible subsets; compare savings only when pending
@@ -1321,7 +1395,7 @@ export default function App() {
                           Cost = km × {money(city.settings.costPerKmINR)} +
                           vehicle hours × {money(city.settings.costPerHourINR)}.
                           Parallel truck time is counted separately for labor.
-                        </p>
+                        </div>
                       </>
                     ) : (
                       <div className="empty-inline">
@@ -1375,39 +1449,7 @@ export default function App() {
                         ))}
                       </div>
                     </section>
-                    <section className="panel">
-                      <span className="eyebrow">AVERAGE-GROWTH FORECAST</span>
-                      <h3>What might need attention next?</h3>
-                      {city.bins
-                        .slice()
-                        .sort((a, b) => b.fillPercent - a.fillPercent)
-                        .slice(0, 5)
-                        .map((b) => {
-                          const f = forecast(
-                            b.history,
-                            city.settings.urgentThreshold,
-                          );
-                          return (
-                            <div className="forecast-row" key={b.id}>
-                              <span>
-                                {b.name}
-                                <small>{f.quality}</small>
-                              </span>
-                              <b>
-                                {f.hours === null
-                                  ? "No estimate"
-                                  : f.hours === 0
-                                    ? "Already urgent"
-                                    : `~${f.hours.toFixed(1)} h to urgent`}
-                              </b>
-                            </div>
-                          );
-                        })}
-                      <p className="small">
-                        Rule-based estimate using 4–5 valid samples. Randomized
-                        history is not physical growth evidence.
-                      </p>
-                    </section>
+                    <Forecasts city={city} sim={sim} />
                   </div>
                 </>
               )}

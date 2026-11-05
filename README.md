@@ -1,5 +1,7 @@
 # CleanCity
 
+Latest municipal update: professional light UI, running collection/fleet metrics, zone workload summaries, both forecast horizons and expanded baseline analytics. See [M1–M3 acceptance and verification](docs/municipal-acceptance.md) (56 tests passed; desktop/mobile, file and keyboard checks executed).
+
 Smart waste monitoring and municipal collection simulation in one React + Vite + TypeScript website. The approved **Final Master Execution Prompt v1.0** supersedes the earlier AWS-first/M0-only plan: **four physical bins**, independent **10/20/50/100-bin virtual cities**, **Vercel + Supabase**. AWS is on hold. No login screens or separate Express server.
 
 ## Run locally

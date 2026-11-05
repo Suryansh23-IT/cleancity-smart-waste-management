@@ -59,16 +59,53 @@ afterEach(async () => {
 });
 
 describe("municipal UI integration (DOM, not graphical browser)", () => {
+  it("traps modal focus and cancels safely with Escape", async () => {
+    await mount();
+    await click("Reset scenario");
+    const cancel = button("Cancel"),
+      confirm = button("Confirm");
+    cancel.focus();
+    await act(async () =>
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Tab",
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    expect(document.activeElement).toBe(confirm);
+    await act(async () =>
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      ),
+    );
+    expect(container.querySelector('[role="dialog"]')).toBe(null);
+    expect(container.querySelectorAll(".map-bin")).toHaveLength(100);
+  });
+  it("shows both forecast horizons and original planned distance alongside progress", async () => {
+    const c = preset(10);
+    c.zones = autoZone(c, ["n0", "n3", "n6"]).zones;
+    saveLibrary(localStorage, [c]);
+    await mount();
+    expect(text()).toContain("Pickup ≥80%");
+    expect(text()).toContain("Urgent ≥90%");
+    await click("Optimize all zones");
+    expect(text()).toContain("Distance travelled");
+    expect(text()).toContain("Remaining stops");
+    expect(
+      container.querySelector('table[aria-label="Operational comparison"]'),
+    ).toBeTruthy();
+  });
   it("shows a clear offline message when static hosting returns HTML for the physical API", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          headers: new Headers({ "content-type": "text/html" }),
-        }),
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "text/html" }),
+      }),
     );
     await mount();
     await click("Physical IoT Lab");

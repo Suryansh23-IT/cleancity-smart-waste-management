@@ -1,5 +1,7 @@
 # Municipal-platform checkpoint audit — 5 November 2026
 
+This records the earlier `9d6b975` checkpoint. The subsequent light-theme municipal M1–M3 implementation and **56-test** verification are documented in [municipal acceptance](municipal-acceptance.md), which supersedes the municipal UI/forecast/progress gaps listed below. Physical/cloud limits still apply.
+
 Branch: `codex/municipal-platform`. Existing uncommitted implementation and earlier firmware/document changes were inspected and preserved. No reset, push, merge, deployment, cloud resource change or hardware operation was performed.
 
 ## Verification evidence
