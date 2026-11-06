@@ -40,8 +40,10 @@ import {
   parseCity,
   status,
 } from "./core/model";
+import DemandSeed from './components/DemandSeed';
+import { createReadyCities } from "./core/readyCities";
 import { preset, blankCity, randomize, infeasiblePreset } from "./core/presets";
-import { autoZone, relocateBin, validateZoneTrips } from "./core/zoning";
+import { regenerateZones, relocateBin, validateZoneTrips } from "./core/zoning";
 import { Plan, planCollection, comparablePlans } from "./core/routing";
 import {
   Simulation,
@@ -66,10 +68,14 @@ import {
 } from "./components/OperationsInsights";
 
 import Dashboard from "./components/Dashboard";
+import Cities from "./components/Cities";
+import StudioCreate from "./components/StudioCreate";
+import OperationsWorkspace from "./components/OperationsWorkspace";
 import FleetPanel from "./components/FleetPanel";
 import { municipalDemo, workspaceStatus, BinFilter } from "./core/workspace";
 const pages = [
   { name: "Overview", icon: LayoutDashboard },
+  { name: "Cities", icon: Map },
   { name: "City Studio", icon: Map },
   { name: "Zone & Fleet Operations", icon: Boxes },
   { name: "Collection Simulator", icon: Truck },
@@ -101,7 +107,7 @@ export default function App() {
     [library, setLibrary] = useState(initial.list),
     [page, setPage] = useState("Overview"),
     [selection, setSelection] = useState<Selection | null>(null),
-    [heads, setHeads] = useState<string[]>([]),
+    [heads, setHeads] = useState<string[]>(initial.city.zones.map(z=>z.headNodeId)),
     [plan, setPlan] = useState<Plan | null>(() =>
       initial.list.length || initial.error
         ? null
@@ -122,6 +128,7 @@ export default function App() {
     [dialog, setDialog] = useState<{
       message: string;
       action: () => void;
+      saveAction?: () => void;
     } | null>(null),
     [showSettings, setShowSettings] = useState(false);
   const [binFilter, setBinFilter] = useState<BinFilter>("ALL"),
@@ -134,12 +141,18 @@ export default function App() {
       id: string;
       stamp: number;
     } | null>(null);
-  function navigate(next: string, target?: string) {
+  const [inspectorDraft, setInspectorDraft] = useState(false);
+  function navigate(next: string, target?: string, discardForm = false) {
+    const go = () => {
+    setInspectorDraft(false);
     setPage(next);
     setSelection(null);
     setShowSettings(false);
     setMenuOpen(false);
     setFocusTarget({ id: target ?? "workspace-title", stamp: Date.now() });
+    };
+    if(inspectorDraft && !discardForm) confirm("The property form has unapplied edits. Cancel and choose Save changes to apply them, or Confirm to discard these form edits and continue.",go);
+    else go();
   }
   useEffect(() => {
     const el = document.getElementById(focusTarget?.id ?? "");
@@ -165,6 +178,7 @@ export default function App() {
       setSim(run);
       stateRef.current = { city, sim: run };
       navigate("Collection Simulator");
+      setFocusTarget({ id: "city-map", stamp: Date.now() });
     });
   const openDemo = () => {
     const c = municipalDemo();
@@ -275,8 +289,9 @@ export default function App() {
   }
   function load(c: City, ready = false, destination?: string) {
     const apply = () => {
+      setInspectorDraft(false);
       setCity(clone(c));
-      setHeads([]);
+      setHeads(c.zones.map(z=>z.headNodeId));
       setPast([]);
       setFuture([]);
       if (ready) {
@@ -287,20 +302,24 @@ export default function App() {
       setSelection(null);
       setShowReview(false);
       setLastSaved(null);
-      if (destination) navigate(destination);
+      if (destination) navigate(destination, undefined, true);
       setWarnings([]);
       setDirty(!library.some((x) => x.id === c.id));
       notify(`${c.name} loaded`);
     };
+    if(inspectorDraft) {confirm("The inspector has unapplied field edits. Cancel and apply Save changes first, or Confirm to discard them and open the other city.",apply);return;}
     if (dirty || sim)
-      confirm(
-        "Load another scenario? Export or save changes first. Any active collection run will be discarded.",
-        apply,
-      );
+      setDialog({message:"Open another city? Confirm discards the current unsaved changes and active simulation. Saved cities are kept. You can save this city's inputs before opening the next one.", action:apply,
+        saveAction: dirty ? () => {
+          if(initial.error) throw Error("Saved data is unreadable. Export your city before switching.");
+          const list=[clone(city),...library.filter(x=>x.id!==city.id)];
+          saveLibrary(localStorage,list); setLibrary(list); apply();
+        } : undefined});
     else apply();
   }
   function save() {
     guard(() => {
+      if(inspectorDraft) throw Error("Apply the open form's Save button first, then Save city. Your field edits have not been saved yet.");
       if (initial.error)
         throw Error(
           "Saved data is unreadable. Export your open city and recover the existing browser storage before saving.",
@@ -318,12 +337,12 @@ export default function App() {
   function generate() {
     guard(() => {
       if (sim) throw Error("Reset collection before regenerating zones");
-      const result = autoZone(city, heads);
+      const result = regenerateZones(city, heads);
       if (
         !change({
           ...city,
           zones: result.zones,
-          trucks: city.trucks.map((t) => ({ ...t, zoneId: undefined })),
+          trucks: result.trucks,
         })
       )
         return;
@@ -507,7 +526,8 @@ export default function App() {
     isOps = page === "Zone & Fleet Operations",
     isSim = page === "Collection Simulator",
     isAnalytics = page === "Analytics & What-If",
-    isDashboard = page === "Overview";
+    isDashboard = page === "Overview",
+    isCities = page === "Cities";
   const mapPanel = (
     <section className="city-panel" id="city-map" tabIndex={-1}>
       <div className="city-panel-header">
@@ -570,7 +590,7 @@ export default function App() {
             </>
           )}
           {isStudio && (
-            <fieldset
+            <details className="map-edit-options"><summary>Fill & settings</summary><fieldset
               className="inline-edit-tools"
               disabled={!(isStudio || isOps) || !!sim}
             >
@@ -603,7 +623,7 @@ export default function App() {
               <button aria-label="Scenario settings" onClick={openSettings}>
                 <Settings2 size={17} />
               </button>
-            </fieldset>
+            </fieldset></details>
           )}
         </div>
       </div>
@@ -617,16 +637,17 @@ export default function App() {
           plan={plan}
           simulation={sim}
           selection={selection}
-          onSelect={setSelection}
+          onSelect={(next) => inspectorDraft ? confirm("Discard unapplied property edits and select another item? Cancel to keep editing.",()=>{setInspectorDraft(false);setSelection(next);}) : setSelection(next)}
           onMove={move}
           onCreate={addNode}
           editing={isStudio && !sim}
         />
         {(isStudio || selection) && (
           <Inspector
+            onDraftChange={setInspectorDraft}
             city={city}
             selection={selection}
-            select={setSelection}
+            select={(next) => inspectorDraft ? confirm("Discard unapplied property edits? Cancel to keep editing.",()=>{setInspectorDraft(false);setSelection(next);}) : setSelection(next)}
             change={change}
             confirm={confirm}
             report={notify}
@@ -664,7 +685,7 @@ export default function App() {
           {sim
             ? sim.time >= sim.plan.duration
               ? "Collection run finished"
-              : "Collection in motion"
+              : sim.running ? "Collection in motion" : "Collection paused"
             : "Plan and simulate collection"}
         </h3>
         <p>
@@ -675,9 +696,9 @@ export default function App() {
       </div>
       <div className="playback">
         <p className="playback-reason">
-          {workspaceStatus(city, plan, sim).planReason ??
+          {sim ? sim.time>=sim.plan.duration ? "Run complete. Review the results or replay the same inputs." : "Virtual playback only. Pause to step through service events or finish the run." : workspaceStatus(city, plan, sim).planReason ??
             workspaceStatus(city, plan, sim).startReason ??
-            "The plan is ready. Start collection to simulate pickups."}
+              "The plan is ready. Start collection to simulate pickups."}
         </p>
         <button
           onClick={() => navigate("Zone & Fleet Operations", "zone-setup")}
@@ -759,12 +780,12 @@ export default function App() {
           </select>
         </label>
       </div>
-      {sim && <progress max={sim.plan.duration || 1} value={sim.time} />}
+      {sim && <><progress aria-label="Overall simulation progress" max={sim.plan.duration || 1} value={sim.time} /><div className="simulation-next"><span>{sim.completed.length} pickups complete · {Math.max(0,sim.plan.eligible.length-sim.plan.pending.length-sim.completed.length)} scheduled stops left · {sim.plan.pending.length} unserved</span><button onClick={()=>navigate('Analytics & What-If')}>View collection analysis <ChevronRight size={15}/></button></div></>}
     </section>
   );
   return (
     <div
-      className={`app ${menuOpen ? "menu-open" : ""} ${isDashboard ? "dashboard-page" : ""} ${physical ? "lab-theme" : ""} ${page === "City Studio" ? "studio-workspace" : ""}`}
+      className={`app ${menuOpen ? "menu-open" : ""} ${isDashboard ? "dashboard-page" : ""} ${physical ? "lab-theme" : ""} ${isOps?'dispatch-page':''} ${isSim?'simulation-page':''} ${isAnalytics?'analytics-page':''} ${page === "City Studio" ? "studio-workspace" : ""}`}
     >
       {menuOpen && (
         <button
@@ -903,9 +924,11 @@ export default function App() {
               </h1>
               <p>
                 {physical
-                  ? "Four physical bins. Verified telemetry. An honest view of connectivity."
+                  ? "Four sensor channels. Only actual measurements appear here; one demo bin is available."
                   : page === "Overview"
                     ? "Review demand. Plan feasible pickups. Simulate collection. Evaluate results."
+                    : isCities
+                      ? "Choose a district, build a network and keep your work in this browser."
                     : isStudio
                       ? "Design your road network. Every connection makes a difference."
                       : isOps
@@ -916,10 +939,10 @@ export default function App() {
               </p>
             </div>
             <div className="heading-actions">
-              {!physical && (
+              {!physical && !isCities && (
                 <>
-                  <button onClick={save}>
-                    <Save size={16} /> Save scenario
+                  <button onClick={save} aria-label="Save scenario">
+                    <Save size={16} /> Save city
                     {dirty && <i className="unsaved-dot" />}
                   </button>
                   {isOps && (
@@ -932,7 +955,6 @@ export default function App() {
                       }
                       onClick={() => {
                         optimize();
-                        navigate("Collection Simulator");
                       }}
                     >
                       Plan collection
@@ -981,7 +1003,21 @@ export default function App() {
             <PhysicalLab />
           ) : (
             <>
-              {!isStudio && (
+              {isCities && <Cities city={city} library={library} dirty={dirty} onSave={save}
+                onRename={(c, name) => guard(() => {
+                  const list=library.map(x => x.id===c.id ? {...x,name} : x);
+                  saveLibrary(localStorage,list); setLibrary(clone(list));
+                  if(city.id===c.id) setCity({...city,name});
+                  notify("City renamed in this browser.","success");
+                })}
+                onOpen={(c, destination) => c === city ? navigate(destination) : load(c, false, destination)}
+                onError={(message) => notify(message, "error")}
+                onDelete={(c) => confirm(`Delete saved city “${c.name}” from this browser? The current open city is retained.`, () => guard(() => {
+                  const list = library.filter(x => x.id !== c.id);
+                  saveLibrary(localStorage, list); setLibrary(list);
+                  if(c.id===city.id){setDirty(true);setLastSaved(null);}
+                }))} />}
+              {!isStudio && !isCities && (
                 <section
                   className="workspace-city-bar"
                   aria-label="Current scenario"
@@ -1007,28 +1043,25 @@ export default function App() {
                       value=""
                       onChange={(e) => {
                         const v = e.target.value;
-                        if (v === "demo") openDemo();
+                        if (v.startsWith("ready:")) load({...createReadyCities()[Number(v.slice(6))],id:uid("city")});
+else if (v === "demo") openDemo();
                         else if (v.startsWith("saved:")) {
                           const c = library.find((c) => c.id === v.slice(6));
                           if (c) load(c);
                         } else if (v) load(preset(Number(v)));
                       }}
                     >
-                      <option value="">Saved cities & presets</option>
-                      <option value="demo">Guided municipal demo</option>
+                      <option value="">Saved cities & ready-to-run cities</option>
+                      {createReadyCities().map((c,i)=><option key={c.id} value={`ready:${i}`}>{c.name}</option>)}
                       {library.map((c) => (
                         <option key={c.id} value={`saved:${c.id}`}>
                           {c.name}
                         </option>
                       ))}
-                      {[10, 20, 50, 100].map((n) => (
-                        <option key={n} value={n}>
-                          {n}-bin preset
-                        </option>
-                      ))}
+
                     </select>
                   </label>
-                  <button onClick={() => navigate("City Studio")}>
+                  <button onClick={() => navigate("Cities")}>
                     Edit / manage cities
                   </button>
                   {city.id.startsWith("demo-") && (
@@ -1045,17 +1078,15 @@ export default function App() {
                   </button>
                 </section>
               )}
+              {(isOps||isStudio)&&<DemandSeed key={`${city.id}:${city.settings.seed}`} city={city} locked={!!sim} onApply={change}/>}
+              {(isOps||isAnalytics)&&<OperationsWorkspace city={city} plan={plan} baseline={baseline} sim={sim} mode={isOps?'dispatch':'analytics'} onPlan={optimize} onContinue={()=>navigate(isOps||sim?'Collection Simulator':'Zone & Fleet Operations')} onInspect={id=>{if(isOps)setOpsMapOpen(true);else navigate('Collection Simulator');setSelection({kind:'truck',id});}}/>}
               {isStudio && (
-                <StudioTools
-                  city={city}
-                  change={change}
-                  confirm={confirm}
-                  load={(c) => load({ ...c, id: uid("city") })}
-                />
+                <section className="studio-guide"><div><span className="eyebrow">CITY STUDIO / EDITING WORKSPACE</span><h2>Shape your collection network.</h2><p>Select a road, bin or junction on the map to edit its properties. Changes stay local until you save.</p></div><div><button onClick={() => navigate("Cities")}>City library</button><button onClick={() => navigate("Zone & Fleet Operations")}>Continue to dispatch <ChevronRight size={15}/></button></div></section>
               )}
+
               {isStudio && (
                 <>
-                  <section className="scenario-bar">
+                  <details className="studio-city-actions"><summary>City file & presets · {city.name} · {dirty ? "Unsaved changes" : library.some(c=>c.id===city.id) ? "Saved in this browser" : "Not saved in this browser"}</summary><section className="scenario-bar">
                     <div className="scenario-title">
                       <span className="mini-icon">
                         <Map size={19} />
@@ -1085,11 +1116,7 @@ export default function App() {
                       }}
                     >
                       <option value="">Choose city preset</option>
-                      {[10, 20, 50, 100].map((n) => (
-                        <option key={n} value={n}>
-                          {n} bins · {n <= 20 ? "Riverton" : "Newhaven"}
-                        </option>
-                      ))}
+
                       <option value="bad">Infeasible test district</option>
                     </select>
                     <button
@@ -1207,6 +1234,7 @@ export default function App() {
                       ))}
                     </div>
                   )}
+                  </details>
                 </>
               )}
               {showSettings && (
@@ -1409,7 +1437,16 @@ export default function App() {
                 />
               ) : null}
               {isSim && collectionControls}
+              {isStudio && <StudioCreate city={city} change={change} select={setSelection} locked={!!sim}/>}
               {(isStudio || isSim) && mapPanel}
+              {isStudio && (
+                <StudioTools
+                  city={city}
+                  change={change}
+                  confirm={confirm}
+                  load={(c) => load({ ...c, id: uid("city") })}
+                />
+              )}
               {isOps && (
                 <details
                   className="zone-map-disclosure"
@@ -1518,6 +1555,7 @@ export default function App() {
                     )}
                   </section>
                   <FleetPanel
+                    onDraftChange={setInspectorDraft}
                     city={city}
                     change={change}
                     locked={!!sim}
@@ -1780,7 +1818,7 @@ export default function App() {
             </span>
             <span>
               {physical
-                ? "PHYSICAL DATA · CLOUD REQUIRED"
+                ? "PHYSICAL DATA · RECEIVER REQUIRED"
                 : "LOCAL SIMULATION · NO CLOUD REQUIRED"}
             </span>
           </footer>
@@ -1816,21 +1854,23 @@ export default function App() {
             aria-labelledby="dialog-title"
           >
             <span className="eyebrow">CONFIRM CHANGE</span>
-            <h2 id="dialog-title">Continue with this action?</h2>
+            <h2 id="dialog-title">{dialog.saveAction ? "Save your city before switching?" : "Review this change"}</h2>
             <p>{dialog.message}</p>
             <div>
               <button autoFocus onClick={() => setDialog(null)}>
                 Cancel
               </button>
+              {dialog.saveAction && <button className="primary" onClick={() => guard(() => {dialog.saveAction!();setDialog(null);})}>Save & open</button>}
               <button
                 className="danger"
+                aria-label="Confirm"
                 onClick={() => {
                   const action = dialog.action;
                   setDialog(null);
                   guard(action);
                 }}
               >
-                Confirm
+                {dialog.saveAction ? "Discard & open" : "Confirm"}
               </button>
             </div>
           </div>

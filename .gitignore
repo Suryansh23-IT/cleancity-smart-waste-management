@@ -30,3 +30,20 @@ __pycache__/
 Thumbs.db
 .idea/
 .vercel/
+
+# Local physical measurements and SQLite sidecars
+.local/
+
+# Physical measurements and sidecars outside the default data directory
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db-wal
+*.db-shm
+
+# Unfinished tutorial tooling: retained locally, outside this checkpoint
+/scripts/finalize-tutorial.cjs
+/scripts/inspect-recording.cjs
+/scripts/record-final-tutorial.cjs
+/scripts/record-tutorial.cjs

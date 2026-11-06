@@ -1,6 +1,6 @@
 import { City } from "./model";
 import { Plan } from "./routing";
-import { Simulation, currentTrip, tripState } from "./simulation";
+import { Simulation, currentTrip, tripState, truckSnapshot } from "./simulation";
 
 export function operationProgress(
   city: City,
@@ -13,7 +13,7 @@ export function operationProgress(
   const trucks = city.trucks.map((truck) => {
     const trips = plan.trips.filter((t) => t.truckId === truck.id),
       active = currentTrip(trips, time),
-      state = active ? tripState(active, time) : null;
+      state = truckSnapshot(city,plan,time,truck.id);
     const stops = trips.flatMap((t) => t.binIds),
       done = stops.filter((id) => completed.has(id)).length;
     const busy = trips.reduce((sum, t) => sum + t.end - t.start, 0);
@@ -28,6 +28,7 @@ export function operationProgress(
             ? "PLANNED"
             : "AVAILABLE",
       from: state?.from,
+      nextBinId: state.nextBinId,
       to: state?.to,
       fraction: state?.fraction ?? 0,
       load: state?.load ?? 0,

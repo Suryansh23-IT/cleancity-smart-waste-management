@@ -167,8 +167,9 @@ describe("urban map rendering contracts", () => {
       c.nodes.filter((n) => n.type === "HEAD").length,
     );
     expect(sim.match(/class="route-highlight"/g)).toHaveLength(
-      plan.trips.filter((t) => t.truckId === plan.trips[0].truckId).length,
+      new Set(plan.trips.map(t=>t.truckId)).size,
     );
+    for(const id of new Set(plan.trips.map(t=>t.truckId)))expect(sim).toContain(`data-truck-id="${id}"`);
     expect(sim).toContain("active-road");
     expect(sim.match(/class="map-bin"/g)).toHaveLength(10);
   });

@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { screenToWorld, panCamera } from "../core/camera";
 import { City, status } from "../core/model";
 import { Plan } from "../core/routing";
-import { Simulation, tripState, currentTrip } from "../core/simulation";
+import { Simulation, tripState, currentTrip, truckSnapshot, routeProgress } from "../core/simulation";
 import MapSurface from "./MapSurface";
-import { hull, streetsFor, binLayout } from "./mapGeometry";
+import { zoneCells, streetsFor, binLayout } from "./mapGeometry";
 export interface Selection {
   kind: "node" | "road" | "bin" | "zone" | "truck";
   id: string;
@@ -331,25 +331,7 @@ export default function CityCanvas({
         }}
       >
         <MapSurface city={city} streets={streets} context={layers.context} />
-        {layers.zones &&
-          city.zones.map((z) => {
-            const points = hull(
-              z.nodeIds.map((id) => nodes.get(id)).filter(Boolean) as Point[],
-            );
-            return points.length >= 3 ? (
-              <polygon
-                key={z.id}
-                points={points.map((p) => `${p.x},${p.y}`).join(" ")}
-                fill={z.color}
-                fillOpacity=".07"
-                stroke={z.color}
-                strokeOpacity=".17"
-                strokeWidth="1.5"
-                strokeDasharray="5 7"
-                pointerEvents="none"
-              />
-            ) : null;
-          })}
+        {layers.zones && zoneCells(city).map(cell=><polygon key={cell.id} data-zone-id={cell.zoneId} points={cell.points.map(p=>`${p.x},${p.y}`).join(" ")} fill={cell.color} fillOpacity=".14" stroke="none" pointerEvents="none"/>)}
         <g className="road-inspection">
           {city.roads.map((r) => {
             const a = point(r.fromNodeId),
@@ -433,91 +415,20 @@ export default function CityCanvas({
           plan?.trips
             .filter(
               (t) =>
-                t.truckId ===
-                (selection?.kind === "truck"
-                  ? selection.id
-                  : simulationView
-                    ? plan.trips[0]?.truckId
-                    : undefined),
+                (simulationView || (selection?.kind === "truck" && t.truckId === selection.id)) && (!simulation || currentTrip(plan.trips.filter(p=>p.truckId===t.truckId),simulation.time)?.id===t.id),
             )
-            .map((trip) => (
-              <path
-                className="route-highlight"
-                key={trip.id}
-                d={trip.nodes
-                  .slice(1)
-                  .map(
-                    (id, i) =>
-                      streets.find((s) =>
-                        s.roads.some(
-                          (r) =>
-                            r.fromNodeId === trip.nodes[i] && r.toNodeId === id,
-                        ),
-                      )?.path ?? "",
-                  )
-                  .join(" ")}
-                fill="none"
-                stroke="#168676"
-                strokeWidth={simulationView ? 6 : 4}
-                strokeOpacity={simulationView ? 0.85 : 0.6}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                pointerEvents="none"
-              />
-            ))}
-        {simulationView &&
-          layers.routes &&
-          simulation &&
-          (() => {
-            const id =
-                selection?.kind === "truck"
-                  ? selection.id
-                  : plan?.trips[0]?.truckId,
-              trip = currentTrip(
-                simulation.plan.trips.filter((t) => t.truckId === id),
-                simulation.time,
-              );
-            if (!trip) return null;
-            const state = tripState(trip, simulation.time),
-              a = point(state.from),
-              street = streets.find((s) =>
-                s.roads.some(
-                  (r) => r.fromNodeId === state.from && r.toNodeId === state.to,
-                ),
-              );
-            return (
-              <g className="active-road" pointerEvents="none">
-                {street ? (
-                  <>
-                    <path
-                      d={street.path}
-                      fill="none"
-                      stroke="#fff"
-                      strokeWidth="11"
-                      strokeLinecap="round"
-                    />
-                    <path
-                      d={street.path}
-                      fill="none"
-                      stroke="#087f72"
-                      strokeWidth="6"
-                      strokeLinecap="round"
-                    />
-                  </>
-                ) : (
-                  <circle
-                    cx={a.x}
-                    cy={a.y}
-                    r="21"
-                    fill="none"
-                    stroke="#168676"
-                    strokeOpacity=".5"
-                    strokeWidth="3"
-                  />
-                )}
-              </g>
-            );
-          })()}
+            .map((trip) => {
+              const color=["#246b59", "#355d91", "#8554a0", "#a46224", "#237e88", "#a43c64", "#687623", "#5b4bb7"][Math.max(0,city.trucks.findIndex(t=>t.id===trip.truckId))%8];
+              const parts=routeProgress(trip,simulation?.time??-1);
+              const pathFor=(completed:boolean)=>parts.filter(p=>p.segment.distance>0&&(p.phase==='completed')===completed).map(p=>{const a=point(p.segment.from),b=point(p.segment.to);return a&&b?`M${a.x},${a.y} L${b.x},${b.y}`:'';}).join(' ');
+              return <g key={trip.id} pointerEvents="none"><path className="route-completed" d={pathFor(true)} fill="none" stroke={color} strokeWidth="3" strokeOpacity=".22"/><path className="route-highlight" data-truck-id={trip.truckId} d={pathFor(false)} fill="none" stroke={color} strokeDasharray="8 4" strokeWidth={selection?.kind==='truck'&&selection.id===trip.truckId?6:4} strokeOpacity={selection?.kind==='truck'&&selection.id!==trip.truckId ? .25 : .75}/></g>;
+            })}
+        {simulationView && layers.routes && simulation && city.trucks.map((truck,index)=>{
+          const state=truckSnapshot(city,simulation.plan,simulation.time,truck.id),a=point(state.from??''),b=point(state.to??'');if(!a||!b)return null;
+          const color=["#246b59", "#355d91", "#8554a0", "#a46224", "#237e88", "#a43c64", "#687623", "#5b4bb7"][index%8];
+          const x=a.x+(b.x-a.x)*state.fraction,y=a.y+(b.y-a.y)*state.fraction,angle=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;
+          return <g key={truck.id} className="active-road" data-truck-id={truck.id} pointerEvents="none">{state.from!==state.to?<><path d={`M${a.x},${a.y} L${x},${y}`} stroke={color} strokeWidth="7" fill="none"/><path d="M0,-5 L10,0 L0,5 Z" transform={`translate(${x},${y}) rotate(${angle})`} fill={color} stroke="white" strokeWidth="1"/></>:<circle cx={a.x} cy={a.y} r="20" stroke={color} strokeWidth="2" fill="none"/>}</g>;
+        })}
         {city.nodes
           .filter(
             (n) =>
@@ -687,17 +598,21 @@ export default function CityCanvas({
                 (p) => p.truckId === t.id,
               ),
               trip = currentTrip(trips, simulation.time);
-            if (!trip) return null;
-            const state = tripState(trip, simulation.time),
-              a = point(state.from),
-              b = point(state.to);
+            const state = truckSnapshot(city,simulation.plan,simulation.time,t.id),
+              a = point(state.from??''),
+              b = point(state.to??'');
             if (!a || !b) return null;
             const x = a.x + (b.x - a.x) * state.fraction,
               y = a.y + (b.y - a.y) * state.fraction;
             return (
               <g
                 key={t.id}
-                transform={`translate(${x + index * 5},${y - index * 5})`}
+                transform={`translate(${x},${y})`}
+                className="map-truck"
+                data-truck-id={t.id}
+                data-from={state.from}
+                data-to={state.to}
+                data-phase={state.state}
                 role="button"
                 tabIndex={0}
                 aria-label={`Select ${t.label}`}
@@ -709,14 +624,14 @@ export default function CityCanvas({
                   }
                 }}
               >
-                <rect
+                <g transform={`rotate(${state.from!==state.to?Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI:0})`}><rect
                   x="-17"
                   y="-11"
                   width="31"
                   height="22"
                   fill={
-                    ["#246b59", "#355d91", "#8554a0", "#a46224", "#237e88"][
-                      index % 5
+                    ["#246b59", "#355d91", "#8554a0", "#a46224", "#237e88", "#a43c64", "#687623", "#5b4bb7"][
+                      index % 8
                     ]
                   }
                   stroke="#fff"
@@ -730,6 +645,7 @@ export default function CityCanvas({
                   stroke="#ffffff"
                   strokeWidth="2"
                 />
+                </g>
                 <text
                   fill="#ffffff"
                   fontSize="11"
@@ -739,7 +655,7 @@ export default function CityCanvas({
                 >
                   {index + 1}
                 </text>
-                <title>{`${t.label} · ${state.state}`}</title>
+                <title>{`${t.label} · ${state.state} · ${city.nodes.find(n=>n.id===state.from)?.label??"No depot assigned"} → ${city.nodes.find(n=>n.id===state.to)?.label??"—"} · Next pickup: ${city.bins.find(b=>b.id===state.nextBinId)?.name??"None"}`}</title>
               </g>
             );
           })}
@@ -765,8 +681,9 @@ export default function CityCanvas({
           <i style={{ background: "#c43c42" }} /> Urgent
         </span>
         <span>▣ · Collection head</span>
-        <span>Illustrative land & zone extent</span>
+        <span>Faint cells = junction ownership</span>
         <span>Crossing gaps · no junction</span>
+        {simulationView && city.trucks.filter(t=>plan?.trips.some(p=>p.truckId===t.id)).map(t=><span key={t.id}><i style={{background:["#246b59", "#355d91", "#8554a0", "#a46224", "#237e88", "#a43c64", "#687623", "#5b4bb7"][city.trucks.indexOf(t)%8]}}/>{t.label} route</span>)}
         {simulationView && (
           <span>
             Route:{" "}
@@ -777,7 +694,7 @@ export default function CityCanvas({
                   ? selection.id
                   : plan?.trips[0]?.truckId),
             )?.label ?? "Plan collection first"}{" "}
-            · select a truck to inspect
+            · faint = completed · dashed = remaining current trip
           </span>
         )}
       </div>

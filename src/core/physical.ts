@@ -5,7 +5,11 @@ export interface PhysicalBin {
   fillPercent: number | null;
   receivedAt: string | null;
   deviceId: string;
-  history: { receivedAt: string; fillPercent: number | null }[];
+  history: { receivedAt: string; fillPercent: number | null;distanceCm?:number|null;status?:string }[];
+  status?:string;
+  reason?:string|null;
+  calibration?:{emptyDistanceCm:number;usableDepthCm:number}|null;
+  lastValid?:{distanceCm:number;receivedAt:string}|null;
 }
 export function staleReading(
   receivedAt: string | null,
@@ -15,7 +19,8 @@ export function staleReading(
   return !Number.isFinite(time) || time > now + 5000 || now - time > 90000;
 }
 export function parsePhysical(input: unknown): PhysicalBin[] {
-  const data = input as { source?: unknown; bins?: unknown };
+  const data = input as { source?: unknown; bins?: unknown;origin?:unknown;receiver?:{connected?:unknown};staleAfterMs?:unknown };
+  if(data?.origin==='LOCAL_USB'&&(typeof data.receiver?.connected!=='boolean'||data.staleAfterMs!==10000))throw Error('Invalid local receiver contract');
   if (
     !data ||
     data.source !== "PHYSICAL" ||
@@ -37,6 +42,7 @@ export function parsePhysical(input: unknown): PhysicalBin[] {
         !/^BIN-00[1-4]$/.test(b.id) ||
         typeof b.label !== "string" ||
         typeof b.deviceId !== "string" ||
+        (b.status!==undefined&&!['UNKNOWN','VALID','NO_ECHO','INVALID'].includes(b.status)) ||
         !fill(b.fillPercent) ||
         !(
           b.distanceCm === null ||
@@ -53,6 +59,7 @@ export function parsePhysical(input: unknown): PhysicalBin[] {
             !h ||
             typeof h.receivedAt !== "string" ||
             !stamp(h.receivedAt) ||
+            (h.distanceCm!==undefined&&h.distanceCm!==null&&(!Number.isFinite(h.distanceCm)||h.distanceCm<2||h.distanceCm>400)) ||
             !fill(h.fillPercent),
         ),
     )

@@ -18,7 +18,7 @@ export function RunProgress({
     <section className="panel run-progress" aria-label="Collection progress">
       <div className="section-heading">
         <div>
-          <span className="eyebrow">SIMULATED OPERATIONS · LIVE STATE</span>
+          <span className="eyebrow">SIMULATED OPERATIONS · VIRTUAL PROGRESS</span>
           <h3>
             {p.done
               ? "Collection cycle complete"
@@ -73,6 +73,7 @@ export function RunProgress({
               <th>Load / capacity</th>
               <th>Trips</th>
               <th>Position on road</th>
+              <th>Next pickup</th>
               <th>Scheduled utilization</th>
             </tr>
           </thead>
@@ -100,9 +101,10 @@ export function RunProgress({
                 <td>{t.trips}</td>
                 <td>
                   {t.from
-                    ? `${t.from} → ${t.to} · ${Math.round(t.fraction * 100)}%`
+                    ? `${city.nodes.find(n=>n.id===t.from)?.label??t.from} → ${city.nodes.find(n=>n.id===t.to)?.label??t.to} · ${Math.round(t.fraction * 100)}%`
                     : "Not dispatched"}
                 </td>
+                <td>{city.bins.find(b=>b.id===t.nextBinId)?.name??(t.state==='RETURNING'?'Returning to depot':t.state==='UNLOADING'?'Unloading at depot':'—')}</td>
                 <td>{t.utilization.toFixed(1)}%</td>
               </tr>
             ))}

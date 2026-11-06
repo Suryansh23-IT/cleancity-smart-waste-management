@@ -1,5 +1,17 @@
 import { City, Zone, colors } from "./model";
 import { pathFinder } from "./graph";
+// Keep fleet responsibility attached to its depot, even if zone IDs reorder.
+export function regenerateZones(c: City, heads: string[]) {
+  const result = autoZone(c, heads);
+  const trucks = c.trucks.map(t => {
+    if (!t.zoneId) return t; // Explicitly shared vehicles remain shared.
+    const old = c.zones.find(z => z.id === t.zoneId);
+    const next = result.zones.find(z => z.headNodeId === old?.headNodeId);
+    if (!next) throw Error(`Reassign ${t.label} before removing its collection head. Zone generation was cancelled; fleet assignments were preserved.`);
+    return {...t, zoneId: next.id};
+  });
+  return {...result, trucks};
+}
 export function autoZone(
   c: City,
   heads: string[],
@@ -13,7 +25,7 @@ export function autoZone(
     heads.some((h) => !c.nodes.some((n) => n.id === h && n.type === "HEAD"))
   )
     throw Error("Select K distinct HEAD nodes, one for every zone (K = 1–6).");
-  // Head-seeded graph-distance assignment with a workload penalty, followed by directed checks.
+  // Head-seeded assignment. Internal directed feasibility is checked below.
   const weakRoads = c.roads.flatMap((r) => [
     r,
     {
@@ -55,7 +67,7 @@ export function autoZone(
     const ownHead = heads.indexOf(n.id);
     candidates.sort(
       (a, b) =>
-        a.d + a.z.binIds.length * 0.035 - (b.d + b.z.binIds.length * 0.035) ||
+        a.d - b.d ||
         a.i - b.i,
     );
     const winner =
@@ -70,13 +82,36 @@ export function autoZone(
       ...c.bins.filter((b) => b.roadNodeId === n.id).map((b) => b.id),
     );
   }
+  // Remove disconnected pockets: a citywide round trip is not permission to
+  // pass through another partition. Never publish a zone owning such nodes.
+  const unassigned: string[]=[];
+  for(const z of zones){
+    const ids=new Set(z.nodeIds),local=pathFinder({nodes:c.nodes.filter(n=>ids.has(n.id)),roads:c.roads.filter(r=>ids.has(r.fromNodeId)&&ids.has(r.toNodeId))});
+    const valid=z.nodeIds.filter(id=>Number.isFinite(local(z.headNodeId,id).distance)&&Number.isFinite(local(id,z.headNodeId).distance));
+    unassigned.push(...z.nodeIds.filter(id=>!valid.includes(id)));z.nodeIds=valid;
+  }
+  // Attach a disconnected pocket only when both its outward and return paths
+  // can be built using unowned nodes and this region, never another region.
+  const remaining=new Set(unassigned);
+  let progress=true;
+  while(progress&&remaining.size){progress=false;
+    for(const id of [...remaining].sort()){
+      const choices=zones.map(z=>{const ids=new Set([...z.nodeIds,...remaining]);const local=pathFinder({nodes:c.nodes.filter(n=>ids.has(n.id)),roads:c.roads.filter(r=>ids.has(r.fromNodeId)&&ids.has(r.toNodeId))});const out=local(z.headNodeId,id),back=local(id,z.headNodeId);return {z,out,back,d:out.distance+back.distance};}).filter(x=>Number.isFinite(x.d)).sort((a,b)=>a.d-b.d||a.z.id.localeCompare(b.z.id));
+      const winner=choices[0];if(!winner)continue;
+      for(const node of [...winner.out.nodes,...winner.back.nodes])if(remaining.delete(node)){winner.z.nodeIds.push(node);progress=true;}
+    }
+  }
+  for(const z of zones)z.binIds=c.bins.filter(b=>z.nodeIds.includes(b.roadNodeId)).map(b=>b.id);
+  for(const id of remaining)warnings.push(`${c.nodes.find(n=>n.id===id)?.label??id}: no round trip inside a single partition; left unassigned`);
   return { zones, warnings };
 }
 export function reassignBin(c: City, binId: string, zoneId: string): City {
   const bin = c.bins.find((b) => b.id === binId),
     zone = c.zones.find((z) => z.id === zoneId);
   if (!bin || !zone) throw Error("Select a valid bin and zone");
-  const path = pathFinder(c);
+  if(!zone.nodeIds.includes(bin.roadNodeId))throw Error('Move the road access point into this partition before reassigning its bin.');
+  const ids=new Set(zone.nodeIds);
+  const path = pathFinder({nodes:c.nodes.filter(n=>ids.has(n.id)),roads:c.roads.filter(r=>ids.has(r.fromNodeId)&&ids.has(r.toNodeId))});
   if (
     !Number.isFinite(path(zone.headNodeId, bin.roadNodeId).distance) ||
     !Number.isFinite(path(bin.roadNodeId, zone.headNodeId).distance)
@@ -114,8 +149,9 @@ export function relocateBin(c: City, binId: string, nodeId: string): City {
   };
 }
 export function validateZoneTrips(c: City): void {
-  const path = pathFinder(c);
-  for (const zone of c.zones)
+  for (const zone of c.zones) {
+    const ids=new Set([...zone.nodeIds,zone.headNodeId]);
+    const path=pathFinder({nodes:c.nodes.filter(n=>ids.has(n.id)),roads:c.roads.filter(r=>ids.has(r.fromNodeId)&&ids.has(r.toNodeId))});
     for (const bin of c.bins.filter((b) => zone.binIds.includes(b.id))) {
       if (
         !Number.isFinite(path(zone.headNodeId, bin.roadNodeId).distance) ||
@@ -125,4 +161,5 @@ export function validateZoneTrips(c: City): void {
           `${zone.name}: ${bin.name} has no directed round trip. Reassign the bin or regenerate zones.`,
         );
     }
+  }
 }

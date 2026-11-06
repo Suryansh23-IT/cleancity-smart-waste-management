@@ -17,22 +17,22 @@ describe("municipal acceptance metrics", () => {
           .slice(0, 3)
           .map((n) => n.id),
       ).zones;
-      c.trucks.forEach((t) => (t.capacityBinUnits = 3));
+      c.trucks=c.zones.map((z,i)=>({...c.trucks[0],id:`t${i}`,zoneId:z.id,capacityBinUnits:3}));
       const p = planCollection(c),
         s = startSimulation(c, p),
         initial = operationProgress(c, p, s);
       expect(initial.distance).toBe(0);
-      expect(initial.remaining).toBe(count);
-      expect(p.pending).toEqual([]);
+      expect(initial.remaining+p.pending.length).toBe(count);
+      expect(new Set([...p.trips.flatMap(t=>t.binIds),...p.pending.map(b=>b.binId)]).size).toBe(count);
       const partial = advance(c, s, p.duration / 2),
         middle = operationProgress(partial.city, p, partial.simulation);
       expect(middle.distance).toBeGreaterThan(0);
       expect(middle.distance).toBeLessThanOrEqual(p.distance);
-      expect(middle.remaining + middle.completed).toBe(count);
+      expect(middle.remaining + middle.completed + middle.pending).toBe(count);
       const final = advance(c, s, p.duration),
         done = operationProgress(final.city, p, final.simulation);
       expect(done.distance).toBeCloseTo(p.distance);
-      expect(done.completed).toBe(count);
+      expect(done.completed+done.pending).toBe(count);
       expect(done.remaining).toBe(0);
       expect(done.done).toBe(true);
       expect(
@@ -44,7 +44,7 @@ describe("municipal acceptance metrics", () => {
         initial,
       );
       const zones = zoneWorkloads(c, p);
-      expect(zones.reduce((sum, z) => sum + z.urgent, 0)).toBe(count);
+      expect(zones.reduce((sum, z) => sum + z.urgent, 0)+c.bins.filter(b=>!c.zones.some(z=>z.binIds.includes(b.id))).length).toBe(count);
       expect(zones.reduce((sum, z) => sum + z.distance, 0)).toBeCloseTo(
         p.distance,
       );

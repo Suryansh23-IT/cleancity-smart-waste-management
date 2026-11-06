@@ -12,7 +12,7 @@ import {
   Search,
 } from "lucide-react";
 import { City, status } from "../core/model";
-import { Plan } from "../core/routing";
+import { Plan, truckZoneAssignments } from "../core/routing";
 import { Simulation } from "../core/simulation";
 import { operationProgress } from "../core/insights";
 import { BinFilter, reviewBins, workspaceStatus } from "../core/workspace";
@@ -150,10 +150,10 @@ export default function Dashboard({
       <section className="mission-banner">
         <div>
           <span className="eyebrow">MUNICIPAL COLLECTION CONTROL</span>
-          <h2>Know what needs collecting. Plan the response.</h2>
+          <h2>{city.name}</h2>
           <p>
-            CleanCity helps you review bin demand, assign zones and trucks, and
-            test a collection plan before dispatch.
+            {s.eligible.length} bins require pickup. {s.available.length} trucks available.
+            Review exceptions, then test your collection response.
           </p>
           {plan && plan.pending.length > 0 && (
             <button
@@ -183,7 +183,7 @@ export default function Dashboard({
       </section>
       <section className="dashboard-kpis" aria-label="Municipal situation">
         <button className="situation-kpi" onClick={() => chooseFilter("ALL")}>
-          <small>City inventory</small>
+          <small>Collection bins</small>
           <strong>
             {city.bins.length}
             <em> bins</em>
@@ -209,7 +209,7 @@ export default function Dashboard({
           className="situation-kpi"
           onClick={() => onNavigate("Zone & Fleet Operations", "zone-setup")}
         >
-          <small>Zone coverage</small>
+          <small>Bins assigned to a zone</small>
           <strong>
             {city.bins.length
               ? `${Math.round((s.assigned.size / city.bins.length) * 100)}%`
@@ -226,7 +226,7 @@ export default function Dashboard({
           className="situation-kpi"
           onClick={() => onNavigate("Zone & Fleet Operations", "fleet-setup")}
         >
-          <small>Collection fleet</small>
+          <small>Trucks ready to work</small>
           <strong>
             {s.available.length}
             <em> available</em>
@@ -276,7 +276,7 @@ export default function Dashboard({
         >
           <div className="section-heading">
             <div>
-              <span className="eyebrow">FROM SETUP TO RESULTS</span>
+              <span className="eyebrow">YOUR COLLECTION WORKFLOW</span>
               <h3>Operator action center</h3>
             </div>
           </div>
@@ -454,7 +454,7 @@ export default function Dashboard({
                       {z.binIds.length} bins ·{" "}
                       {
                         city.trucks.filter(
-                          (t) => !t.zoneId || t.zoneId === z.id,
+                          (t) => truckZoneAssignments(city).get(t.id) === z.id,
                         ).length
                       }{" "}
                       available trucks

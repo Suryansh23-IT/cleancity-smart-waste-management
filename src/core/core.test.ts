@@ -28,6 +28,7 @@ function ready(count = 100) {
       .slice(0, 3)
       .map((n) => n.id),
   ).zones;
+  c.trucks=c.zones.map((z,i)=>({...c.trucks[0],id:`test-truck-${i}`,zoneId:z.id}));
   return c;
 }
 describe("directed shortest paths", () => {
@@ -138,7 +139,7 @@ describe("graph-based zoning", () => {
     expect(result.warnings.length).toBeGreaterThan(0);
     expect(result.zones.flatMap((z) => z.binIds)).not.toContain("b9");
     c.zones = result.zones;
-    expect(() => reassignBin(c, "b9", c.zones[0].id)).toThrow("round trip");
+    expect(() => reassignBin(c, "b9", c.zones[0].id)).toThrow(/round trip|partition/);
   });
 });
 describe("routing and capacity", () => {
@@ -154,15 +155,15 @@ describe("routing and capacity", () => {
     c.bins.forEach((b) => (b.fillPercent = 0));
     expect(planCollection(c).trips).toEqual([]);
   });
-  it("schedules every zone with a single truck, capacity, expanded roads and no duplicates", () => {
+  it("keeps a single truck in its assigned zone and reports other zones unserved", () => {
     const c = randomize(ready(), true);
     c.trucks = c.trucks.slice(0, 1);
     c.trucks[0].capacityBinUnits = 3;
     const plan = planCollection(c);
-    expect(plan.pending).toEqual([]);
+    expect(plan.pending.length).toBe(c.bins.length-c.zones[0].binIds.length);
     expect(plan.trips.length).toBeGreaterThan(3);
     const bins = plan.trips.flatMap((t) => t.binIds);
-    expect(new Set(bins).size).toBe(100);
+    expect(new Set(bins).size).toBe(c.zones[0].binIds.length);
     let end = 0;
     plan.trips.forEach((t) => {
       expect(t.load).toBeLessThanOrEqual(3 + 1e-9);
@@ -341,12 +342,13 @@ describe("audit regressions", () => {
     expect(moved.bins[0].roadNodeId).toBe("n1");
     expect(moved.zones.flatMap((z) => z.binIds)).not.toContain(id);
     expect(c.zones.flatMap((z) => z.binIds)).toContain(id);
+    const access=moved.bins.find(b=>moved.zones.some(z=>z.binIds.includes(b.id)&&z.headNodeId!==b.roadNodeId))!.roadNodeId;
     moved.roads = moved.roads.filter(
-      (r) => r.fromNodeId !== "n2" && r.toNodeId !== "n2",
+      (r) => r.fromNodeId !== access && r.toNodeId !== access,
     );
-    expect(() => validateZoneTrips(moved)).toThrow("round trip");
+    expect(() => validateZoneTrips(moved)).toThrow(/round trip|partition/);
   });
-  it("counts legal inter-zone repositioning and rejects teleporting across components", () => {
+  it("never transfers a truck between partitions even when a connecting road exists", () => {
     const c = blankCity();
     c.settings.zoneCount = 2;
     c.nodes = [
@@ -365,14 +367,12 @@ describe("audit regressions", () => {
     c.zones = autoZone(c, ["a", "b"]).zones;
     let p = planCollection(c);
     expect(p.trips.length).toBe(1);
-    expect(p.pending[0].reason).toContain("reach this zone head");
+    expect(p.pending[0].reason).toContain("No available truck for zone");
     c.roads = [{ id: "ab", fromNodeId: "a", toNodeId: "b", distanceKm: 2 }];
     p = planCollection(c);
-    expect(p.pending).toEqual([]);
-    expect(p.distance).toBe(2);
-    expect(p.trips[1].nodes).toEqual(["a", "b"]);
-    expect(p.trips[1].segments[0].duration).toBe(6);
-    expect(p.trips[1].origin).toBe(p.trips[0].head);
+    expect(p.pending).toHaveLength(1);expect(p.trips).toHaveLength(1);expect(p.distance).toBe(0);
+    c.trucks.push({...c.trucks[0],id:'second',zoneId:c.zones[1].id});
+    p=planCollection(c);expect(p.pending).toEqual([]);expect(p.trips.every(t=>t.origin===t.head&&t.nodes.every(n=>n===t.head))).toBe(true);
   });
   it("produces identical bin history and chronological events at every playback speed", () => {
     const c = randomize(ready(20), true),

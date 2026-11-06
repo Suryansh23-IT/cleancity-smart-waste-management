@@ -7,7 +7,7 @@ export default function PhysicalLab() {
     [loading, setLoading] = useState(false),
     [error, setError] = useState(""),
     [checked, setChecked] = useState<string | null>(null),
-    [now, setNow] = useState(Date.now());
+    [now, setNow] = useState(Date.now()), [receiver,setReceiver]=useState<{connected:boolean;error:string|null}|null>(null),[local,setLocal]=useState(false),[feedback,setFeedback]=useState("");
   const inFlight = useRef(false);
   const requestVersion = useRef(0);
   async function refresh(signal?: AbortSignal) {
@@ -25,7 +25,7 @@ export default function PhysicalLab() {
       if (!response.ok)
         throw Error(
           response.status === 503
-            ? "Cloud is not configured. No verified telemetry is available."
+            ? "Telemetry receiver is not configured or unavailable. No verified telemetry is available."
             : `Physical API unavailable (${response.status}). No verified data.`,
         );
       if (
@@ -35,11 +35,12 @@ export default function PhysicalLab() {
           .includes("application/json")
       )
         throw Error(
-          "Physical cloud endpoint is unavailable. No verified telemetry is available.",
+          "Physical telemetry endpoint is unavailable. No verified telemetry is available.",
         );
       const data = await response.json();
       if (signal?.aborted || version !== requestVersion.current) return;
       setBins(parsePhysical(data));
+      setLocal(data.origin==="LOCAL_USB");setReceiver(data.receiver??null);
       setError("");
       setChecked(new Date().toISOString());
       setNow(Date.now());
@@ -59,7 +60,7 @@ export default function PhysicalLab() {
     const interval = setInterval(() => {
       setNow(Date.now());
       refresh(controller.signal);
-    }, 30000);
+    }, 1000);
     return () => {
       controller.abort();
       requestVersion.current++;
@@ -74,13 +75,14 @@ export default function PhysicalLab() {
         <div>
           <span className="eyebrow">PHYSICAL IOT LAB</span>
           <h3>Real devices. Real observations.</h3>
-          <p>ESP32 → HTTPS ingestion → Supabase → read-only dashboard</p>
+          <p>Four sensor channels · one demonstration bin · independent of the municipal simulator</p>
+          <small>Local path: ESP32 → USB serial → Node receiver → SQLite → this view. Live hardware verification requires authorized COM access.</small>
         </div>
         <span className="pill">
           {error
             ? "NO VERIFIED DATA"
             : bins.length
-              ? "PHYSICAL TELEMETRY"
+              ? local ? "LOCAL PHYSICAL" : "PHYSICAL TELEMETRY"
               : "NO VERIFIED DATA"}
         </span>
         <button disabled={loading} onClick={() => refresh()}>
@@ -89,16 +91,17 @@ export default function PhysicalLab() {
         </button>
       </section>
       {error && (
-        <div className="warning-list">
+        <div className="warning-list" role="alert">
           <AlertTriangle size={18} /> {error} Last successfully fetched
           readings, if any, are retained below and marked stale.
         </div>
       )}
+      {local&&<p role="status">LOCAL PHYSICAL · Receiver {receiver?.connected?"CONNECTED":"DISCONNECTED"} · {receiver?.error??"No serial commands are sent. Other channels are distance-only until individually calibrated."}</p>}
       <div className="physical-grid">
         {[1, 2, 3, 4].map((i) => {
           const id = `BIN-${String(i).padStart(3, "0")}`,
             b = bins.find((b) => b.id === id),
-            stale = !!error || staleReading(b?.receivedAt ?? null, now),
+            stale = !!error || (local ? !b?.receivedAt || now-Date.parse(b.receivedAt)>10000 || Date.parse(b.receivedAt)>now+5000 : staleReading(b?.receivedAt ?? null, now)),
             s = status(b?.fillPercent ?? null, undefined, stale),
             color =
               s === "URGENT"
@@ -110,12 +113,12 @@ export default function PhysicalLab() {
             <section className="panel bin-gauge" key={id}>
               <div className="section-heading">
                 <b>{b?.label ?? id}</b>
-                <span className="pill">{stale ? "OFFLINE" : "ONLINE"}</span>
+                <span className="pill">{!b?.receivedAt ? "NO READING" : error ? "RECEIVER UNAVAILABLE" : local&&!receiver?.connected ? "DISCONNECTED" : stale ? "STALE" : b.status==="NO_ECHO" ? "NO ECHO" : b.status==="INVALID"||b.distanceCm===null ? "INVALID READING" : b.fillPercent===null ? "VALID · NOT CALIBRATED" : "RECEIVING"}</span>
               </div>
               <div
                 className="gauge"
                 style={{
-                  background: `conic-gradient(${stale ? "#50606a" : color} ${(b?.fillPercent ?? 0) * 3.6}deg, #24313c 0deg)`,
+                  background: `conic-gradient(${stale ? "#abb8b0" : color} ${(b?.fillPercent ?? 0) * 3.6}deg, #edf2eb 0deg)`,
                 }}
               >
                 <div>
@@ -124,7 +127,7 @@ export default function PhysicalLab() {
                       ? "—"
                       : Math.round(b.fillPercent) + "%"}
                   </strong>
-                  <small>{b?.receivedAt ? s : "NO VERIFIED DATA"}</small>
+                  <small>{b?.receivedAt ? stale ? "LAST RECEIVED VALUE" : local&&b.distanceCm!==null&&b.fillPercent===null ? "NOT CALIBRATED" : s : "NO VERIFIED DATA"}</small>
                 </div>
               </div>
               <dl>
@@ -141,11 +144,14 @@ export default function PhysicalLab() {
                     : "Never"}
                 </dd>
                 <dt>Source</dt>
-                <dd>PHYSICAL</dd>
+                <dd>{local?"LOCAL PHYSICAL":"PHYSICAL"}</dd>
                 <dt>Device</dt>
                 <dd>{b?.deviceId ?? "Not configured"}</dd>
+                <dt>Reading age</dt><dd>{b?.receivedAt ? `${Math.max(0,Math.round((now-Date.parse(b.receivedAt))/1000))} seconds` : 'Unknown'}</dd>
               </dl>
-              {b && b.history.length > 1 && (
+              {local&&<><p className="small">{b?.reason}{b?.lastValid?` · Last valid distance: ${b.lastValid.distanceCm.toFixed(2)} cm (${new Date(b.lastValid.receivedAt).toLocaleTimeString()})`:''}</p><details><summary>Measured calibration · this channel only</summary><p>Use measured empty distance and usable depth. Leave uncalibrated channels distance-only.</p><form onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);setFeedback(`${id}: Saving calibration…`);try{const r=await fetch(`/api/physical/calibration/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({emptyDistanceCm:Number(f.get('empty')),usableDepthCm:Number(f.get('depth'))})});const result=await r.json();if(!r.ok)throw Error(result.error??'Calibration could not be saved');setFeedback(`${id}: calibration saved. Fill will be calculated from subsequent readings.`);await refresh();}catch(err){setFeedback(`${id}: ${err instanceof Error?err.message:String(err)}`);}}}><label>Empty distance (cm)<input name="empty" aria-label={`${id} empty distance`} type="number" min="2" max="400" step="any" required defaultValue={b?.calibration?.emptyDistanceCm}/></label><label>Usable depth (cm)<input name="depth" aria-label={`${id} usable depth`} type="number" min="0.01" max="398" step="any" required defaultValue={b?.calibration?.usableDepthCm}/></label><button>Save {id} calibration</button><p role="status">{feedback.startsWith(id)?feedback:""}</p></form></details><ol aria-label={`${id} recent distance history`}>{b?.history.slice(-5).map((h,i)=><li key={i}>{new Date(h.receivedAt).toLocaleTimeString()} · {h.distanceCm!=null?`${h.distanceCm.toFixed(2)} cm`:h.status??'Unknown'}</li>)}</ol></>}
+              {b?.history.some(h=>h.fillPercent!==null)&&<p className="small">Last usable history value: {([...b.history].filter(h=>h.fillPercent!==null).sort((a,b)=>Date.parse(a.receivedAt)-Date.parse(b.receivedAt)).at(-1)?.fillPercent)?.toFixed(0)}%. This does not establish that the current reading is valid.</p>}
+              {b && b.history.length > 1 && b.history.some(h=>h.fillPercent!==null) && (
                 <>
                   <h4>Recent physical fill history</h4>
                   <svg
@@ -172,6 +178,7 @@ export default function PhysicalLab() {
           );
         })}
       </div>
+
       <section className="panel">
         <h3>Physical alerts & connectivity</h3>
         {bins
@@ -198,29 +205,12 @@ export default function PhysicalLab() {
           </p>
         )}
         <p className="small">
-          Last successful API check: {checked ?? "None"} · Poll interval 30
-          seconds · Offline threshold 90 seconds. Server receipt timestamps are
+          Last successful API check: {checked ?? "None"} · Poll interval 1
+          seconds · Local stale threshold 10 seconds; legacy threshold 90 seconds. Server receipt timestamps are
           authoritative.
         </p>
       </section>
-      <section className="panel">
-        <span className="eyebrow">NEXT MANAGEABLE HARDWARE ACTION</span>
-        <h3>Verify one sensor before expanding.</h3>
-        <p>
-          Hardware debugging is paused pending experienced assistance. When
-          testing resumes, Vishal and the helper should identify the exact board
-          and power path, measure the resistor values, and have a technician
-          check one sensor’s level-shifted Echo circuit before powering it. Then
-          record ruler/empty/partial/full/no-echo tests. Do not rewire with
-          power connected. No GPIO mapping or circuit approval is implied by
-          this dashboard.
-        </p>
-        <p className="small">
-          ESP32 detection/upload/serial success is user-reported. HC-SR04
-          operation and live device → database → dashboard integration remain
-          unverified.
-        </p>
-      </section>
+      <section className="panel"><h3>Physical evidence</h3><p>Four sensor channels are user-reported as working. Only one demo bin exists. Electrical protection and per-channel calibration are not independently verified. Preserve the tested firmware and wiring; never apply 5V Echo directly to ESP32 GPIO.</p></section>
     </>
   );
 }

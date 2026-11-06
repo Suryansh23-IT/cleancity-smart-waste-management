@@ -180,6 +180,16 @@ function clip(poly: Point[], a: number, b: number, c: number): Point[] {
   }
   return out;
 }
+// Disjoint display cells follow actual node ownership; no convex hull can
+// paint across a neighbor's owned nodes or imply road connectivity.
+export function zoneCells(city:City){
+ if(!city.nodes.length)return [];
+ const minX=Math.min(...city.nodes.map(n=>n.x))-30,maxX=Math.max(...city.nodes.map(n=>n.x))+30,minY=Math.min(...city.nodes.map(n=>n.y))-30,maxY=Math.max(...city.nodes.map(n=>n.y))+30;
+ return city.nodes.flatMap(n=>{const z=city.zones.find(z=>z.nodeIds.includes(n.id));if(!z)return [];
+ let poly=[{x:minX,y:minY},{x:maxX,y:minY},{x:maxX,y:maxY},{x:minX,y:maxY}];
+ for(const other of city.nodes){if(other.id===n.id)continue;poly=clip(poly,2*(other.x-n.x),2*(other.y-n.y),other.x**2+other.y**2-n.x**2-n.y**2);}
+ return [{id:n.id,zoneId:z.id,color:z.color,points:poly}];});
+}
 export function landParcels(city: City) {
   const outline = hull(
     city.nodes.flatMap((n) => [

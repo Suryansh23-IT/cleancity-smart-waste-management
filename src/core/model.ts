@@ -47,6 +47,7 @@ export interface Truck {
   available: boolean;
 }
 export interface Settings {
+  strictZoneRouting?: boolean;
   zoneCount: number;
   pickupThreshold: number;
   urgentThreshold: number;
@@ -253,6 +254,7 @@ export function validateCity(value: unknown): string[] {
       errors.push(`Invalid truck ${t.id}`);
   });
   const s = c.settings;
+  if(s?.strictZoneRouting!==undefined && typeof s.strictZoneRouting!=='boolean')errors.push('Invalid strict zone routing policy');
   if (
     !s ||
     !Number.isInteger(s.zoneCount) ||

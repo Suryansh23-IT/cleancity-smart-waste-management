@@ -37,6 +37,14 @@ export default function MapSurface({
               strokeWidth=".6"
             />
           ))}
+          {city.description.startsWith('Warehouse yards') && <g aria-label="Illustrative warehouse buildings" fill="#d4d9d5" stroke="#b6c1ba" strokeWidth="1.5">
+            {Array.from({length:15},(_,i)=><g key={i}><rect x={155+(i%5)*170} y={190+Math.floor(i/5)*165} width="88" height="60" rx="3"/><path d={`M${159+(i%5)*170},${220+Math.floor(i/5)*165} h80`} fill="none" stroke="#b6c1ba"/></g>)}
+          </g>}
+          {city.description.includes('River Willow separates') && <g aria-label="Illustrative River Willow, crossed only by graph roads">
+            <path d="M550,-50 C535,170 565,290 550,400 S535,630 550,810" fill="none" stroke="#bcdce2" strokeWidth="85"/>
+            <path d="M550,-50 C535,170 565,290 550,400 S535,630 550,810" fill="none" stroke="#a7cfd8" strokeWidth="2"/>
+            <text x="550" y="440" textAnchor="middle" fill="#467a87" fontSize="12" transform="rotate(-90 550 440)">RIVER WILLOW</text>
+          </g>}
         </g>
       )}
       <g

@@ -1,4 +1,5 @@
 import { City, uid, removeNode } from "../core/model";
+import { useState } from "react";
 import { Selection } from "./CityCanvas";
 import { reassignBin, relocateBin } from "../core/zoning";
 export default function Inspector({
@@ -10,7 +11,9 @@ export default function Inspector({
   report,
   readOnly = false,
   edit,
+  onDraftChange,
 }: {
+  onDraftChange?: (dirty: boolean) => void;
   readOnly?: boolean;
   edit?: () => void;
   city: City;
@@ -20,19 +23,25 @@ export default function Inspector({
   select: (s: Selection | null) => void;
   report: (message: string) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<"bin" | "node" | "road">("bin");
+  const [applied, setApplied] = useState<string | null>(null);
+  const objects = category === "bin" ? city.bins.map(b => ({id:b.id,label:b.name,detail:`${b.fillPercent}% full`}))
+    : category === "node" ? city.nodes.map(n=>({id:n.id,label:n.label,detail:n.type === "HEAD" ? "Collection head" : "Junction"}))
+    : city.roads.map(r=>({id:r.id,label:r.name || `${city.nodes.find(n=>n.id===r.fromNodeId)?.label ?? r.fromNodeId} → ${city.nodes.find(n=>n.id===r.toNodeId)?.label ?? r.toNodeId}`,detail:`${r.distanceKm} km · one directed link`}));
+  const matches=objects.filter(o=>(o.label+' '+o.id).toLowerCase().includes(query.toLowerCase()));
   if (!selection)
     return (
       <aside className="inspector">
         <span className="eyebrow">PROPERTY INSPECTOR</span>
-        <h3>Make this city yours.</h3>
+        <h3>Explore & edit</h3>
         <p>
           Select a bin, junction or road to inspect and edit its properties.
         </p>
-        <div className="inspector-hint">
-          Double-click the canvas to add a junction. Drag a bin to move its
-          marker; change its road-access node in the inspector. Road weights,
-          measured in kilometres, control routing.
-        </div>
+        <div className="inspector-hint">Use Add to city above the map, or select an existing item below. Double-click the map to add a junction. Drag markers to reposition them.</div>
+        <div className="object-categories" aria-label="Object category">{(["bin","node","road"] as const).map(k=><button key={k} aria-pressed={category===k} onClick={()=>setCategory(k)}>{k==='bin'?'Bins':k==='node'?'Places':'Roads'}</button>)}</div>
+        <input aria-label="Find an object to edit" placeholder="Find by name or ID…" value={query} onChange={e=>setQuery(e.target.value)}/>
+        <div className="studio-object-list">{matches.slice(0,20).map(o=><button key={o.id} onClick={()=>select({kind:category,id:o.id})}><b>{o.label}</b><small>{o.detail}</small></button>)}{!matches.length&&<p>No matching objects. Add one on the map or try another name.</p>}{matches.length>20&&<small>Showing 20 of {matches.length}. Search to narrow the list.</small>}</div>
         <h4>Network at a glance</h4>
         <dl>
           <dt>Road nodes</dt>
@@ -54,7 +63,7 @@ export default function Inspector({
     t = city.trucks.find((t) => t.id === id);
   const opts = city.nodes.map((n) => (
     <option key={n.id} value={n.id}>
-      {n.label} ({n.id})
+      {n.label}
     </option>
   ));
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -160,11 +169,13 @@ export default function Inspector({
             : x,
         ),
       };
-    change(next, kind === "node" || kind === "road");
+    const ok = change(next, kind === "node" || kind === "road");
+    setApplied(ok ? id : null);
+    if(ok) onDraftChange?.(false);
   };
   const del = () =>
     confirm(
-      `Delete this ${kind}? Associated plans will be invalidated.`,
+      `Delete ${n?.label ?? b?.name ?? r?.name ?? z?.name ?? t?.label ?? kind}? ${kind==='node' ? `${city.roads.filter(e=>e.fromNodeId===id||e.toNodeId===id).length} connected roads and ${city.bins.filter(e=>e.roadNodeId===id).length} bins use this junction. Remove these connections first; linked junctions cannot be deleted.` : kind==='zone' ? 'Trucks assigned to this zone will become unassigned.' : kind==='road' ? 'Only this travel direction is removed. Its reverse direction, if present, is kept.' : 'This item will be removed from the open city.'} Collection plans may need rebuilding. Use Undo edit to recover a successful editor deletion before leaving this city. Save the city separately to keep changes.`,
       () => {
         let c = city;
         if (kind === "node") c = removeNode(city, id);
@@ -209,14 +220,16 @@ export default function Inspector({
           t?.label ??
           "Selection removed"}
       </h3>
-      <code>{id}</code>
+      <details className="technical-details"><summary>Technical reference</summary><code>{id}</code></details>
+      {!readOnly && <p className="property-save-hint">Edit the fields, then choose Save changes. Save city keeps the changes in this browser.</p>}
+      {applied === id && <p role="status">Properties applied. Save the city to keep your changes.</p>}
       {readOnly && (
         <p className="inspector-hint">
           Read-only map. Choose Edit map to change city properties.
         </p>
       )}
       {readOnly && edit && <button onClick={edit}>Edit selected object</button>}
-      <form onSubmit={submit} key={JSON.stringify([selection, n, b, r, z, t])}>
+      <form onSubmit={submit} onChange={(e)=>{setApplied(null);if((e.target as HTMLInputElement).name)onDraftChange?.(true);}} key={JSON.stringify([selection, n, b, r, z, t])}>
         <fieldset disabled={readOnly}>
           {kind === "node" && n && (
             <>
@@ -234,7 +247,7 @@ export default function Inspector({
                   </option>
                 </select>
               </label>
-              <div className="field-row">
+              <details className="advanced-properties"><summary>Exact map position</summary><div className="field-row">
                 <label>
                   X
                   <input
@@ -259,7 +272,7 @@ export default function Inspector({
                     required
                   />
                 </label>
-              </div>
+              </div></details>
               <button
                 type="button"
                 onClick={() => {
@@ -342,7 +355,7 @@ export default function Inspector({
                 <input name="name" defaultValue={b.name} required />
               </label>
               <label>
-                Road node
+                Road access point
                 <select name="roadNodeId" defaultValue={b.roadNodeId}>
                   {opts}
                 </select>
@@ -428,6 +441,7 @@ export default function Inspector({
               >
                 Duplicate bin
               </button>
+              <details className="advanced-properties"><summary>Marker placement & history</summary>
               <button
                 type="button"
                 onClick={() =>
@@ -476,6 +490,7 @@ export default function Inspector({
                   <b>{h.fill.toFixed(0)}%</b>
                 </div>
               ))}
+              </details>
             </>
           )}
           {kind === "road" && r && (
@@ -640,7 +655,7 @@ export default function Inspector({
               <label>
                 Zone restriction
                 <select name="zone" defaultValue={t.zoneId ?? ""}>
-                  <option value="">Any zone</option>
+                  <option value="">Automatic zone · one per run</option>
                   {city.zones.map((z) => (
                     <option key={z.id} value={z.id}>
                       {z.name}

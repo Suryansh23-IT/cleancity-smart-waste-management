@@ -50,26 +50,42 @@ export function comparablePlans(a: Plan, b: Plan): boolean {
     )
   );
 }
-export function planCollection(c: City, baseline = false): Plan {
-  const path = pathFinder(c),
-    eligible = c.bins.filter(
-      (b) => b.fillPercent >= c.settings.pickupThreshold,
+export function truckZoneAssignments(c:City){
+ const available=c.trucks.filter(t=>t.available);
+ const bindings=new Map(c.trucks.filter(t=>t.zoneId).map(t=>[t.id,t.zoneId!]));
+ for(const truck of available.filter(t=>!t.zoneId)){
+  const zone=[...c.zones].sort((a,b)=>available.filter(t=>bindings.get(t.id)===a.id).length-available.filter(t=>bindings.get(t.id)===b.id).length||a.id.localeCompare(b.id))[0];
+  if(zone)bindings.set(truck.id,zone.id);
+ }
+ return bindings;
+}
+export function planCollection(c: City, baseline = false, collectAllBins = false): Plan {
+  const eligible = c.bins.filter(
+      (b) => collectAllBins || b.fillPercent >= c.settings.pickupThreshold,
     ),
     pending: Plan["pending"] = [],
     trips: Trip[] = [];
   const assigned = new Set<string>(),
     available = c.trucks.filter((t) => t.available),
     times = new Map(available.map((t) => [t.id, 0]));
-  // A truck begins at its first assigned head. Later zones require a legal, costed transfer.
+  const zonePaths = new Map(c.zones.map(z=>{
+    const ids=new Set([...z.nodeIds,z.headNodeId]);
+    return [z.id,pathFinder({nodes:c.nodes.filter(n=>ids.has(n.id)),roads:c.roads.filter(r=>ids.has(r.fromNodeId)&&ids.has(r.toNodeId))})] as const;
+  }));
+  // A shared/unassigned vehicle is bound to one zone for this dispatch, never
+  // silently transferred into another partition later in the same run.
+  const bindings=truckZoneAssignments(c);
+  // Every trip starts and ends at this truck's bound partition head.
   const locations = new Map<string, string>();
   const canReachHead = (truck: Truck, head: string) =>
     !locations.has(truck.id) ||
-    Number.isFinite(path(locations.get(truck.id)!, head).distance);
+    locations.get(truck.id) === head;
   const makeTrip = (
     truck: Truck,
     zone: City["zones"][number],
     pool: City["bins"],
   ): Trip => {
+    const path=zonePaths.get(zone.id)!;
     const origin = locations.get(truck.id) ?? zone.headNodeId;
     const trip: Trip = {
       id: `trip-${trips.length + 1}`,
@@ -153,14 +169,17 @@ export function planCollection(c: City, baseline = false): Plan {
     return trip;
   };
   for (const zone of c.zones) {
+    const path=zonePaths.get(zone.id)!;
+    const invalidPartition=!zone.nodeIds.includes(zone.headNodeId)||zone.nodeIds.some(id=>c.zones.some(z=>z.id!==zone.id&&z.nodeIds.includes(id)));
     const pool = eligible.filter((b) => zone.binIds.includes(b.id));
     for (const bin of pool) {
-      const trucks = available.filter((t) => !t.zoneId || t.zoneId === zone.id);
+      const trucks = available.filter((t) => bindings.get(t.id) === zone.id);
       const reachable = trucks.filter((t) => canReachHead(t, zone.headNodeId));
       const reason =
+        invalidPartition ? 'Invalid partition: head must belong to its zone and junctions cannot belong to multiple zones' :
         !Number.isFinite(path(zone.headNodeId, bin.roadNodeId).distance) ||
         !Number.isFinite(path(bin.roadNodeId, zone.headNodeId).distance)
-          ? "No directed round trip"
+          ? "No directed round trip inside assigned zone"
           : !trucks.length
             ? "No available truck for zone"
             : !reachable.length
@@ -181,7 +200,7 @@ export function planCollection(c: City, baseline = false): Plan {
       const truck = available
         .filter(
           (t) =>
-            (!t.zoneId || t.zoneId === zone.id) &&
+            (bindings.get(t.id) === zone.id) &&
             canReachHead(t, zone.headNodeId) &&
             pool.some(
               (b) =>

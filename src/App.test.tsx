@@ -8,6 +8,9 @@ import { autoZone } from "./core/zoning";
 import { saveLibrary, loadLibrary } from "./core/storage";
 import { parseCity } from "./core/model";
 
+// Large map workflows render hundreds of accessible SVG objects in jsdom.
+vi.setConfig({ testTimeout: 15000 });
+
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -59,10 +62,146 @@ afterEach(async () => {
 });
 
 describe("municipal UI integration (DOM, not graphical browser)", () => {
+  it('shows valid uncalibrated local distance, distance history and calibration controls',async()=>{
+    const at=new Date().toISOString();
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,headers:new Headers({'content-type':'application/json'}),json:async()=>({source:'PHYSICAL',origin:'LOCAL_USB',staleAfterMs:10000,receiver:{connected:true,error:null},bins:[{id:'BIN-001',label:'TEST channel',deviceId:'TEST-fixture',distanceCm:20.22,fillPercent:null,receivedAt:at,status:'VALID',calibration:null,history:[{receivedAt:at,distanceCm:20.22,fillPercent:null,status:'VALID'}]}]})}));
+    await mount();await click('Physical IoT Lab');expect(text()).toContain('VALID · NOT CALIBRATED');expect(text()).toContain('LOCAL PHYSICAL');expect(text()).toContain('20.2 cm');expect(text()).not.toContain('INVALID READING');expect(container.querySelector('[aria-label="BIN-001 recent distance history"]')?.textContent).toContain('20.22 cm');expect(container.querySelector('[aria-label="BIN-001 empty distance"]')).not.toBeNull();
+  });
+  it('changes demo demand with one click while preserving roads zones and fleet',async()=>{
+    await mount();await click('Zone & Fleet Operations');await click('Save scenario');
+    const before=loadLibrary(localStorage)[0];await click('Next seed · new demand');await click('Save scenario');
+    const after=loadLibrary(localStorage)[0];expect(after.settings.seed).toBe(before.settings.seed+1);
+    expect(after.nodes).toEqual(before.nodes);expect(after.roads).toEqual(before.roads);expect(after.zones).toEqual(before.zones);expect(after.trucks).toEqual(before.trucks);
+    expect(after.bins.map(b=>b.fillPercent)).not.toEqual(before.bins.map(b=>b.fillPercent));
+  });
+  it('keeps dispatch review and results tied to modeled inputs and protects fleet drafts',async()=>{
+    await mount();await click('Zone & Fleet Operations');
+    expect(text()).toContain('Truck routes & pickup assignments');
+    expect(container.querySelectorAll('.head-choice input:checked')).toHaveLength(3);
+    await value(container.querySelector('.fleet-editor input[name="capacity"]')!,'4');
+    await click('Save scenario');expect(text()).toContain("Apply the open form's Save button first");
+    await click('Save Truck 01');await click('Plan collection');
+    expect(container.querySelector('[aria-label="Dispatch review"]')).not.toBeNull();
+    await click('Review simulation');await click('Start collection');await click('Pause');
+    expect(text()).toContain('Collection paused');
+    await click('Finish run');await click('View collection analysis');
+    expect(container.querySelector('[aria-label="Results overview"]')).not.toBeNull();
+    expect(text()).toContain('summed vehicle hours');expect(text()).toContain('plans and run results stay in this tab');
+  });
+  it('shows four honest physical slots without manufacturing sensor values',async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:503}));
+    await mount();await click('Physical IoT Lab');
+    expect(container.querySelectorAll('.bin-gauge')).toHaveLength(4);
+    expect(text()).toContain('Telemetry receiver is not configured or unavailable');
+    expect(text().match(/NO READING/g)).toHaveLength(4);
+    expect(text()).not.toContain('Supabase');expect(text()).toContain('Live hardware verification requires authorized COM access');
+  });
+  it('distinguishes invalid, stale and absent physical contract readings',async()=>{
+    const history:never[]=[];
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,headers:new Headers({'content-type':'application/json'}),json:async()=>({source:'PHYSICAL',bins:[
+      {id:'BIN-001',label:'Test invalid',deviceId:'fixture',receivedAt:new Date().toISOString(),distanceCm:null,fillPercent:null,history},
+      {id:'BIN-002',label:'Test stale',deviceId:'fixture',receivedAt:new Date(Date.now()-120000).toISOString(),distanceCm:12,fillPercent:50,history}
+    ]})}));
+    await mount();await click('Physical IoT Lab');
+    expect(text()).toContain('INVALID READING');expect(text()).toContain('STALE');
+    expect(text().match(/NO READING/g)).toHaveLength(2);
+    expect(text()).toContain('LAST RECEIVED VALUE');
+  });
+  it("does not claim city persistence for unapplied inspector fields", async () => {
+    await mount();await click('City Studio');
+    await act(async()=>container.querySelector<HTMLButtonElement>('.studio-object-list button')!.click());
+    await value(container.querySelector('.inspector input[name="name"]')!,'Draft bin name');
+    await click('Save scenario');
+    expect(text()).toContain("Apply the open form's Save button first");
+    expect(loadLibrary(localStorage)).toHaveLength(0);
+    await click('Cities');expect(container.querySelector('.modal')).not.toBeNull();
+    await click('Cancel');expect(container.querySelector('.inspector input[name="name"]')).not.toBeNull();
+    await click('Save changes');await click('Save scenario');
+    expect(loadLibrary(localStorage)[0].bins[0].name).toBe('Draft bin name');
+  });
+  it("creates connected assets through named beginner forms and undoes a bin addition", async () => {
+    await mount();await click('City Studio');await click('New city');
+    if(container.querySelector('.modal'))await click('Confirm');
+    const create = async(kind:string,name:string)=>{
+      await click(`+ ${kind}`);
+      const form=container.querySelector<HTMLFormElement>('.studio-create-form')!;
+      await value(form.querySelector('input[name="name"]')!,name);
+      await act(async()=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+    };
+    await create('Junction','Library');await create('Junction','Station');
+    await create('Road','Library Road');
+    await create('Bin','Library bin');
+    await click('Save scenario');
+    const c=loadLibrary(localStorage)[0];
+    expect(c.nodes.map(n=>n.label)).toEqual(['Library','Station']);
+    expect(c.nodes[0].x).not.toBe(c.nodes[1].x);
+    expect(c.roads).toHaveLength(2);
+    expect(c.roads[0].fromNodeId).toBe(c.roads[1].toNodeId);
+    expect(c.bins[0].name).toBe('Library bin');
+    await click('Undo edit');await click('Save scenario');
+    expect(loadLibrary(localStorage)[0].bins).toHaveLength(0);
+  });
+  it("saves the current draft before opening a different city", async () => {
+    await mount();await click('City Studio');await click('New city');
+    if(container.querySelector('.modal'))await click('Confirm');
+    await click('Cities');await click('Templates 6');await click('View Willowbridge Riverside');
+    expect(container.querySelector('.modal')?.textContent).toContain('Save & open');
+    await click('Save & open');
+    expect(loadLibrary(localStorage)).toHaveLength(1);
+    expect(text()).toContain('Willowbridge Riverside');
+  });
+  it("opens an independent curated city copy and saves it without changing existing cities", async () => {
+    saveLibrary(localStorage, [preset(10)]);
+    await mount();
+    await click("Cities");
+    await click("Templates 6");
+    expect(container.querySelectorAll(".city-library-card")).toHaveLength(6);
+    await click("View Willowbridge Riverside");
+    expect(text()).toContain("Willowbridge Riverside");
+    await click("Save scenario");
+    const saved=loadLibrary(localStorage);
+    expect(saved).toHaveLength(2);
+    expect(saved.some(c=>c.name==='Willowbridge Riverside' && c.bins.length===32)).toBe(true);
+    expect(saved.some(c=>c.id===preset(10).id)).toBe(true);
+    await click("Cities");
+    await click("Templates 6");
+    await click("Duplicate Willowbridge Riverside");
+    expect(text()).toContain("Willowbridge Riverside copy");
+    await click("Save scenario");
+    expect(loadLibrary(localStorage)).toHaveLength(3);
+  });
+  it("creates a named empty city and deletes only its browser save", async () => {
+    await mount();
+    await click("Cities"); await click("Create city");
+    const form=container.querySelector('.create-city-panel form')!;
+    await value(form.querySelector('input[name="name"]')!,"Acceptance Borough");
+    await value(form.querySelector('select[name="bins"]')!,"0");
+    await act(async()=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+    expect(text()).toContain('Acceptance Borough');
+    await click("Save scenario"); await click("Cities");
+    await click("My cities 1");
+    await click("Rename city");
+    await value(container.querySelector('.city-rename-form input')!,"Acceptance Borough renamed");
+    await act(async()=>container.querySelector('.city-rename-form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+    expect(loadLibrary(localStorage)[0].name).toBe("Acceptance Borough renamed");
+    await click("Delete saved Acceptance Borough renamed");await click("Confirm");
+    expect(loadLibrary(localStorage)).toHaveLength(0);
+    expect(text()).toContain('Acceptance Borough');
+  });
+  it("finds bins through Studio's object list without changing graph data", async () => {
+    await mount();await click('City Studio');
+    const before=container.querySelectorAll('.map-road').length;
+    const input=container.querySelector<HTMLInputElement>('[aria-label="Find an object to edit"]')!;
+    await value(input,'BIN-001');
+    expect(container.querySelectorAll('.studio-object-list button')).toHaveLength(1);
+    await act(async()=>container.querySelector<HTMLButtonElement>('.studio-object-list button')!.click());
+    expect(container.querySelector('.inspector input[name="name"]')).not.toBeNull();
+    expect(container.querySelectorAll('.map-road')).toHaveLength(before);
+  });
   it("introduces the municipal use case, filters real exceptions and replans after an operator fixes one", async () => {
     await mount();
     expect(text()).toContain("SIMULATED MUNICIPAL DATA");
-    expect(text()).toContain("Know what needs collecting");
+    expect(text()).toContain("Review exceptions, then test your collection response.");
     expect(button("Start simulation").disabled).toBe(false);
     await act(async () =>
       container.querySelector<HTMLButtonElement>(".urgent-kpi")!.click(),
@@ -318,7 +457,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     );
     await mount();
     await click("Physical IoT Lab");
-    expect(text()).toContain("Physical cloud endpoint is unavailable");
+    expect(text()).toContain("Physical telemetry endpoint is unavailable");
     expect(text()).not.toContain("Unexpected token");
   });
   it("recovers physical polling through StrictMode cleanup without getting stuck loading", async () => {
@@ -330,7 +469,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
       ),
     );
     await click("Physical IoT Lab");
-    expect(text()).toContain("Cloud is not configured");
+    expect(text()).toContain("Telemetry receiver is not configured or unavailable");
     expect(button("Refresh").disabled).toBe(false);
   });
   it("walks 100-bin zoning, randomization, planning, playback, save and reload", async () => {
@@ -383,7 +522,7 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     await click("Physical IoT Lab");
     expect(text()).toContain("NO VERIFIED DATA");
     expect(container.querySelectorAll(".bin-gauge")).toHaveLength(4);
-    expect(text()).toContain("Cloud is not configured");
+    expect(text()).toContain("Telemetry receiver is not configured or unavailable");
     expect(container.querySelector(".canvas-wrap")).toBe(null);
   });
   it("edits a directed road, clears zones/plans, and supports undo/redo", async () => {

@@ -1,16 +1,22 @@
 import { City, uid } from "../core/model";
+import {truckZoneAssignments} from '../core/routing';
 import { Plus, Truck } from "lucide-react";
+import { useState } from 'react';
 export default function FleetPanel({
   city,
   change,
   locked,
   confirm,
+  onDraftChange,
 }: {
+  onDraftChange?: (dirty:boolean)=>void;
   city: City;
   change: (c: City) => boolean;
   locked: boolean;
   confirm: (message: string, action: () => void) => void;
 }) {
+  const [messages,setMessages]=useState<Record<string,string>>({});
+  const bindings=truckZoneAssignments(city);
   return (
     <section
       className="panel fleet-manager"
@@ -44,9 +50,10 @@ export default function FleetPanel({
           <Plus size={16} /> Add truck
         </button>
       </div>
+      <p className="small"><b>Zone-contained routing is always enforced.</b> Each truck stays in one partition and returns to its head. Missing internal roads are reported as unserved work.</p>
       <p>
-        Available trucks can serve their assigned zone. “Any zone” permits
-        cross-zone work when the directed roads allow it. Capacity uses modeled
+        Zone and road permissions follow the policy above. Strict automatic assignment
+        binds an unassigned truck to one zone for the whole run. Capacity uses modeled
         bin units.
       </p>
       {locked && (
@@ -64,7 +71,7 @@ export default function FleetPanel({
               <small>
                 {t.capacityBinUnits} units ·{" "}
                 {city.settings.speeds[t.speedGrade]} km/h ·{" "}
-                {city.zones.find((z) => z.id === t.zoneId)?.name ?? "Any zone"}
+                {city.zones.find((z) => z.id === bindings.get(t.id))?.name ?? "No zone assigned"}{!t.zoneId&&bindings.has(t.id)?' (auto)':''}
               </small>
             </span>
             <span className="pill">
@@ -73,17 +80,21 @@ export default function FleetPanel({
             <span>Edit</span>
           </summary>
           <form
+            key={JSON.stringify(t)}
+            onChange={()=>onDraftChange?.(true)}
             onSubmit={(e) => {
               e.preventDefault();
               const f = new FormData(e.currentTarget);
-              change({
+              const label=String(f.get('label')).trim(),capacity=Number(f.get('capacity'));
+              if(!label||!Number.isFinite(capacity)||capacity<=0){setMessages({...messages,[t.id]:'Enter a truck name and a capacity greater than zero.'});return;}
+              const ok=change({
                 ...city,
                 trucks: city.trucks.map((x) =>
                   x.id === t.id
                     ? {
                         ...x,
-                        label: String(f.get("label")),
-                        capacityBinUnits: Number(f.get("capacity")),
+                        label,
+                        capacityBinUnits: capacity,
                         speedGrade: Number(f.get("speed")),
                         zoneId: String(f.get("zone")) || undefined,
                         available: f.has("available"),
@@ -91,6 +102,8 @@ export default function FleetPanel({
                     : x,
                 ),
               });
+              setMessages({...messages,[t.id]:ok?'Truck updated. Rebuild the plan to use these settings; Save city keeps them in this browser.':'Truck was not changed. Review the workspace error and correct the values.'});
+              if(ok)onDraftChange?.(false);
             }}
           >
             <fieldset disabled={locked}>
@@ -128,7 +141,7 @@ export default function FleetPanel({
                 <label>
                   Zone assignment
                   <select name="zone" defaultValue={t.zoneId ?? ""}>
-                    <option value="">Any zone</option>
+                    <option value="">Automatic zone · one per run</option>
                     {city.zones.map((z) => (
                       <option key={z.id} value={z.id}>
                         {z.name}
@@ -146,16 +159,17 @@ export default function FleetPanel({
                 </label>
               </div>
               <button className="primary">Save {t.label}</button>
+              {messages[t.id]&&<p role="status">{messages[t.id]}</p>}
               <button
                 className="danger"
                 type="button"
                 onClick={() =>
-                  confirm(`Delete ${t.label}?`, () =>
-                    change({
+                  confirm(`Delete ${t.label}? Its planned work will need replanning. The open city is not saved automatically.`, () => {
+                    if(change({
                       ...city,
                       trucks: city.trucks.filter((x) => x.id !== t.id),
-                    }),
-                  )
+                    }))onDraftChange?.(false);
+                  })
                 }
               >
                 Delete truck

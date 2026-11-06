@@ -1,5 +1,5 @@
 import { City, clone } from "./model";
-import { Plan, Phase, Trip } from "./routing";
+import { Plan, Phase, Trip, truckZoneAssignments } from "./routing";
 export interface Event {
   time: number;
   message: string;
@@ -15,6 +15,21 @@ export interface Simulation {
   events: Event[];
 }
 export function startSimulation(city: City, plan: Plan): Simulation {
+  const bindings=truckZoneAssignments(city),seen=new Set<string>(),ends=new Map<string,number>();
+  for(const trip of plan.trips){
+    const zone=city.zones.find(z=>z.id===trip.zoneId),truck=city.trucks.find(t=>t.id===trip.truckId);
+    if(!zone||!truck?.available||bindings.get(truck.id)!==zone.id||!zone.nodeIds.includes(zone.headNodeId)||zone.nodeIds.some(id=>city.zones.some(z=>z.id!==zone.id&&z.nodeIds.includes(id)))||trip.origin!==zone.headNodeId||trip.head!==zone.headNodeId||trip.start<(ends.get(truck.id)??0))throw Error('Stale or invalid dispatch: regenerate zones and replan collection.');
+    let position=trip.origin,load=0,distance=0,duration=0;
+    for(const s of trip.segments){
+      if(s.from!==position||!zone.nodeIds.includes(s.from)||!zone.nodeIds.includes(s.to)||s.duration<0||!Number.isFinite(s.duration))throw Error('Route leaves its partition or has discontinuous movement. Replan collection.');
+      if(s.from!==s.to&&!city.roads.some(r=>r.fromNodeId===s.from&&r.toNodeId===s.to&&r.distanceKm===s.distance))throw Error('Route references a missing road. Replan collection.');
+      if(s.kind==='COLLECTING'){const bin=city.bins.find(b=>b.id===s.binId);if(!bin||seen.has(bin.id)||!zone.binIds.includes(bin.id)||bin.roadNodeId!==s.from)throw Error('Invalid or duplicate pickup in dispatch. Replan collection.');seen.add(bin.id);load+=s.amount??0;if(load>truck.capacityBinUnits+1e-8)throw Error('Truck capacity exceeded in dispatch.');}
+      if(s.kind==='UNLOADING'){if(s.from!==zone.headNodeId)throw Error('Unloading must occur at the assigned depot.');load=0;}
+      position=s.to;distance+=s.distance;duration+=s.duration;
+    }
+    if(position!==zone.headNodeId||load!==0||Math.abs(trip.distance-distance)>1e-7||Math.abs(trip.end-trip.start-duration)>1e-7)throw Error('Invalid trip return or totals. Replan collection.');
+    ends.set(truck.id,trip.end);
+  }
   return {
     original: clone(city),
     plan: clone(plan),
@@ -32,6 +47,18 @@ export function currentTrip(trips: Trip[], time: number): Trip | undefined {
     [...trips].reverse().find((t) => time >= t.end) ??
     trips[0]
   );
+}
+export function truckSnapshot(city:City,plan:Plan,time:number,truckId:string){
+ const trips=plan.trips.filter(t=>t.truckId===truckId),trip=currentTrip(trips,time);
+ const zoneId=trip?.zoneId??truckZoneAssignments(city).get(truckId);
+ const head=city.zones.find(z=>z.id===zoneId)?.headNodeId;
+ if(!trip)return {state:city.trucks.find(t=>t.id===truckId)?.available?'AVAILABLE':'UNAVAILABLE',from:head,to:head,fraction:0,load:0,distance:0,zoneId,nextBinId:undefined,trip:undefined};
+ let cursor=trip.start;const next=trip.segments.find(s=>{cursor+=s.duration;return s.kind==='COLLECTING'&&cursor>time;});
+ return {...tripState(trip,time),zoneId,nextBinId:next?.binId,trip};
+}
+export function routeProgress(trip:Trip,time:number){
+ let cursor=trip.start;
+ return trip.segments.map(segment=>{const start=cursor;cursor+=segment.duration;return {segment,start,end:cursor,phase:time>=cursor?'completed':time>=start?'current':'remaining'} as const;});
 }
 export function tripState(trip: Trip, time: number) {
   if (time < trip.start)
