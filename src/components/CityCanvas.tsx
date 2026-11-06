@@ -4,6 +4,7 @@ import { City, status } from "../core/model";
 import { Plan } from "../core/routing";
 import { Simulation, tripState, currentTrip, truckSnapshot, routeProgress } from "../core/simulation";
 import MapSurface from "./MapSurface";
+import {isBoardShowcase} from '../core/showcaseLayout';
 import { zoneCells, streetsFor, binLayout } from "./mapGeometry";
 export interface Selection {
   kind: "node" | "road" | "bin" | "zone" | "truck";
@@ -500,7 +501,7 @@ export default function CityCanvas({
               pending = plan?.pending.some((p) => p.binId === b.id);
             const s = status(b.fillPercent, city.settings),
               color =
-                s === "URGENT"
+                isBoardShowcase(city) ? (/^BIN-00[1-4]$/.test(b.id)?'#d64b3f':'#338c52') : s === "URGENT"
                   ? "#c43c42"
                   : s === "COLLECTION_NEEDED"
                     ? "#b16c0d"
@@ -512,7 +513,7 @@ export default function CityCanvas({
                 className="map-bin"
                 tabIndex={0}
                 role="button"
-                aria-label={`${b.name} ${b.fillPercent}%`}
+                aria-label={`${b.name} ${isBoardShowcase(city) ? b.id : `${b.fillPercent}%`}`}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") onSelect({ kind: "bin", id: b.id });
                 }}
@@ -671,15 +672,7 @@ export default function CityCanvas({
         </div>
       )}
       <div className="map-legend">
-        <span>
-          <i style={{ background: "#047857" }} /> Normal
-        </span>
-        <span>
-          <i style={{ background: "#b16c0d" }} /> Collection needed
-        </span>
-        <span>
-          <i style={{ background: "#c43c42" }} /> Urgent
-        </span>
+        {isBoardShowcase(city) ? <><span><i style={{background:'#d64b3f'}}/> REAL physical-derived bin</span><span><i style={{background:'#338c52'}}/> VIRTUAL bin</span><span>A1–A4 · dashed guides = road access, not truck routes</span></> : <><span><i style={{background:'#047857'}}/> Normal</span><span><i style={{background:'#b16c0d'}}/> Collection needed</span><span><i style={{background:'#c43c42'}}/> Urgent</span></>}
         <span>▣ · Collection head</span>
         <span>Faint cells = junction ownership</span>
         <span>Crossing gaps · no junction</span>

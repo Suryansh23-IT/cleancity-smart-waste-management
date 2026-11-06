@@ -1,3 +1,4 @@
+import {showcaseArtwork,isBoardShowcase} from '../core/showcaseLayout';
 import { City } from "../core/model";
 import { Street, polygon, landParcels, footprints } from "./mapGeometry";
 import { useMemo } from "react";
@@ -15,6 +16,7 @@ export default function MapSurface({
     () => footprints(city, streets),
     [city.nodes, streets],
   );
+  if(isBoardShowcase(city))return <g className="shared-showcase-board" pointerEvents="none" dangerouslySetInnerHTML={{__html:showcaseArtwork(city,false)}}/>;
   return (
     <g className="urban-surface" pointerEvents="none">
       {context && (
