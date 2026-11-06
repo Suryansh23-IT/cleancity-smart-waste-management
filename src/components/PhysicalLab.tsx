@@ -1,3 +1,4 @@
+import SerialConnection from './SerialConnection';
 import { useEffect, useRef, useState } from "react";
 import { Radio, RefreshCw, AlertTriangle } from "lucide-react";
 import { status } from "../core/model";
@@ -7,7 +8,7 @@ export default function PhysicalLab() {
     [loading, setLoading] = useState(false),
     [error, setError] = useState(""),
     [checked, setChecked] = useState<string | null>(null),
-    [now, setNow] = useState(Date.now()), [receiver,setReceiver]=useState<{connected:boolean;error:string|null}|null>(null),[local,setLocal]=useState(false),[feedback,setFeedback]=useState("");
+    [now, setNow] = useState(Date.now()), [receiver,setReceiver]=useState<{connected:boolean;error:string|null;port?:string|null}|null>(null),[local,setLocal]=useState(false),[feedback,setFeedback]=useState("");
   const inFlight = useRef(false);
   const requestVersion = useRef(0);
   async function refresh(signal?: AbortSignal) {
@@ -89,6 +90,12 @@ export default function PhysicalLab() {
           <RefreshCw size={16} />
           {loading ? "Checking…" : "Refresh"}
         </button>
+      </section>
+      <SerialConnection onChange={()=>{void refresh();}}/>
+      <section className="panel" aria-label="Automatic USB connection status" role="status">
+        <b>Automatic USB monitoring</b>
+        <p>{error ? 'Local receiver unavailable — USB cannot be read directly by this website.' : local ? `Receiver: ${receiver?.connected?'PORT OPEN':'DISCONNECTED'} · ${receiver?.port??'No port selected'} · Fresh valid channels: ${bins.filter(b=>b.status==='VALID'&&b.receivedAt&&now-Date.parse(b.receivedAt)<=10000&&Date.parse(b.receivedAt)<=now+5000).length}/4` : 'Checking telemetry receiver…'}</p>
+        <small>Updates automatically every second while this Lab is open. The local receiver must be running with your explicitly selected COM port; it retries that same port after a USB reconnect. Fresh distance readings do not prove calibration or electrical safety.</small>
       </section>
       {error && (
         <div className="warning-list" role="alert">

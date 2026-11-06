@@ -1,3 +1,4 @@
+import type { ShowcaseSnapshot } from './showcase';
 export type NodeType = "INTERSECTION" | "HEAD" | "OPTIONAL_UNLOADING_POINT";
 export interface RoadNode {
   id: string;
@@ -59,6 +60,8 @@ export interface Settings {
   seed: number;
 }
 export interface City {
+  showcase?: boolean;
+  showcaseSnapshot?: ShowcaseSnapshot;
   version: 1;
   id: string;
   name: string;
@@ -277,6 +280,14 @@ export function validateCity(value: unknown): string[] {
     !Number.isSafeInteger(s.seed)
   )
     errors.push("Invalid city settings");
+  if (c.showcase !== undefined && typeof c.showcase !== 'boolean') errors.push('Invalid showcase marker');
+  const snap = c.showcaseSnapshot;
+  if (snap) {
+    if (snap.version !== 1 || !['TEST','PHYSICAL'].includes(snap.mode) || !Number.isFinite(Date.parse(snap.capturedAt)) ||
+      !Array.isArray(snap.readings) || snap.readings.length !== 4 || new Set(snap.readings.map(r=>r?.id)).size !== 4 ||
+      snap.readings.some(r=>!r || !/^BIN-00[1-4]$/.test(r.id) || r.status !== 'VALID' || r.distanceCm === null || !Number.isFinite(r.distanceCm) || r.fillPercent === null || !Number.isFinite(r.fillPercent) || !Number.isFinite(Date.parse(r.receivedAt??'')) || !r.calibration) ||
+      !snap.fills || Object.keys(snap.fills).length !== 10 || Object.entries(snap.fills).some(([id,v])=>!c.bins.some(b=>b.id===id) || !Number.isFinite(v) || v<0 || v>100)) errors.push('Invalid showcase provenance');
+  }
   return errors;
 }
 export function parseCity(json: string): City {

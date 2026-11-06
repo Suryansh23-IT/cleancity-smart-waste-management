@@ -1,3 +1,5 @@
+import ShowcasePanel from './components/ShowcasePanel';
+import {showcaseCity} from './core/showcase';
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -231,6 +233,7 @@ export default function App() {
         throw Error(
           "City View is read-only. Switch to Edit map or operations to make changes.",
         );
+      if(city.showcaseSnapshot && JSON.stringify(next.showcaseSnapshot)===JSON.stringify(city.showcaseSnapshot) && city.bins.some(b=>/^(BIN-00[1-4]|showcase-real-[1-4])$/.test(b.id)&&next.bins.find(n=>n.id===b.id)?.fillPercent!==b.fillPercent))throw Error('Physical-derived fills are frozen. Capture a new validated snapshot instead.');
       for (const r of next.roads) {
         if (
           !city.roads.some(
@@ -999,8 +1002,19 @@ export default function App() {
               </button>
             </section>
           )}
+          {!physical && city.showcase && <p role="status">{city.showcaseSnapshot?.mode==='TEST'?'TEST FIXTURE':city.showcaseSnapshot?'PHYSICAL-DERIVED':'UNCAPTURED'} showcase inputs · truck collection is simulated. Manage snapshots in Physical IoT Lab.</p>}
           {physical ? (
+            <>
             <PhysicalLab />
+            <section className="iot-showcase-workspace" aria-label="IoT showcase dashboard">
+              <h2>10-bin showcase dashboard</h2>
+              <p>Prepare a physical-derived or explicitly TEST planning snapshot here, then continue to the existing municipal collection workspaces.</p>
+              <button onClick={()=>load(showcaseCity(),false,"Physical IoT Lab")}>Open 10-bin showcase</button>
+              {city.showcase && <ShowcasePanel key={city.id} city={city} locked={!!sim} onCapture={c=>{if(sim||inspectorDraft){notify("Reset the run and apply open form edits first.","error");return false;}const errors=validateCity(c);if(errors.length){notify(errors.join("; "),"error");return false;}setCity(c);setDirty(true);invalidate();return true;}}/>}
+
+              {city.showcase && <><button onClick={save}>Save showcase city</button><button onClick={()=>navigate('City Studio')}>Edit showcase map</button><button disabled={!city.showcaseSnapshot} onClick={()=>navigate('Zone & Fleet Operations')}>Continue to Dispatch</button></>}
+            </section>
+            </>
           ) : (
             <>
               {isCities && <Cities city={city} library={library} dirty={dirty} onSave={save}

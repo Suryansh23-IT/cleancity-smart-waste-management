@@ -15,6 +15,7 @@ export interface Simulation {
   events: Event[];
 }
 export function startSimulation(city: City, plan: Plan): Simulation {
+  if(city.showcase&&!city.showcaseSnapshot)throw Error('Capture a validated physical or explicitly TEST snapshot before showcase simulation.');
   const bindings=truckZoneAssignments(city),seen=new Set<string>(),ends=new Map<string,number>();
   for(const trip of plan.trips){
     const zone=city.zones.find(z=>z.id===trip.zoneId),truck=city.trucks.find(t=>t.id===trip.truckId);
