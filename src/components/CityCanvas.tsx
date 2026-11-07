@@ -192,6 +192,8 @@ export default function CityCanvas({
     () => binLayout(city, point),
     [city.nodes, city.bins, drag?.kind === "node" ? drag : null],
   );
+  const zones = useMemo(() => layers.zones ? zoneCells(city) : [], [city.nodes, city.zones, layers.zones]);
+  const boardMap = isBoardShowcase(city);
   return (
     <div
       className={`canvas-wrap urban-map ${editing ? "engineering-map" : simulationView ? "simulation-map" : "city-view-map"}`}
@@ -332,7 +334,7 @@ export default function CityCanvas({
         }}
       >
         <MapSurface city={city} streets={streets} context={layers.context} />
-        {layers.zones && zoneCells(city).map(cell=><polygon key={cell.id} data-zone-id={cell.zoneId} points={cell.points.map(p=>`${p.x},${p.y}`).join(" ")} fill={cell.color} fillOpacity=".14" stroke="none" pointerEvents="none"/>)}
+        {zones.map(cell=><polygon key={cell.id} data-zone-id={cell.zoneId} points={cell.points.map(p=>`${p.x},${p.y}`).join(" ")} fill={cell.color} fillOpacity=".14" stroke="none" pointerEvents="none"/>)}
         <g className="road-inspection">
           {city.roads.map((r) => {
             const a = point(r.fromNodeId),
@@ -500,8 +502,10 @@ export default function CityCanvas({
             const completed = simulation?.completed.includes(b.id),
               pending = plan?.pending.some((p) => p.binId === b.id);
             const s = status(b.fillPercent, city.settings),
+              pickupStatus = completed ? "Pickup completed" : pending ? "Unserved pickup" :
+                b.fillPercent < city.settings.pickupThreshold ? "Below threshold, no pickup" : "Pickup eligible",
               color =
-                isBoardShowcase(city) ? (/^BIN-00[1-4]$/.test(b.id)?'#d64b3f':'#338c52') : s === "URGENT"
+                boardMap ? (/^BIN-00[1-4]$/.test(b.id)?'#d64b3f':'#338c52') : s === "URGENT"
                   ? "#c43c42"
                   : s === "COLLECTION_NEEDED"
                     ? "#b16c0d"
@@ -513,7 +517,7 @@ export default function CityCanvas({
                 className="map-bin"
                 tabIndex={0}
                 role="button"
-                aria-label={`${b.name} ${isBoardShowcase(city) ? b.id : `${b.fillPercent}%`}`}
+                aria-label={`${b.name} ${b.fillPercent}% · ${pickupStatus}`}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") onSelect({ kind: "bin", id: b.id });
                 }}
@@ -588,7 +592,7 @@ export default function CityCanvas({
                   </text>
                 )}
                 <title>
-                  {`${b.name}: ${b.fillPercent}% · ${s} · node ${b.roadNodeId} (drag to move marker only)`}
+                  {`${b.name}: ${b.fillPercent}% · ${pickupStatus} · node ${b.roadNodeId}${editing ? ' (drag to move marker only)' : ''}`}
                 </title>
               </g>
             );
@@ -672,7 +676,7 @@ export default function CityCanvas({
         </div>
       )}
       <div className="map-legend">
-        {isBoardShowcase(city) ? <><span><i style={{background:'#d64b3f'}}/> REAL physical-derived bin</span><span><i style={{background:'#338c52'}}/> VIRTUAL bin</span><span>A1–A4 · dashed guides = road access, not truck routes</span></> : <><span><i style={{background:'#047857'}}/> Normal</span><span><i style={{background:'#b16c0d'}}/> Collection needed</span><span><i style={{background:'#c43c42'}}/> Urgent</span></>}
+        {boardMap ? <><span><i style={{background:'#d64b3f'}}/> Physical sensor location{city.showcaseSnapshot?.mode==='TEST'?' · TEST inputs':''}</span><span><i style={{background:'#338c52'}}/> Virtual bin · collected only at threshold</span><span>A1–A4 · dashed guides = road access, not truck routes</span></> : <><span><i style={{background:'#047857'}}/> Below threshold · no pickup</span><span><i style={{background:'#b16c0d'}}/> Collection needed</span><span><i style={{background:'#c43c42'}}/> Urgent</span></>}
         <span>▣ · Collection head</span>
         <span>Faint cells = junction ownership</span>
         <span>Crossing gaps · no junction</span>

@@ -1,3 +1,5 @@
+> **Superseded scope/status (7 November 2026):** Follow [the locked F1–F4 roadmap](locked-delivery-roadmap.md). F1 complete; F2 backend persistence; F3 existing-software QA/deployment readiness; F4 focused physical acceptance. Road closure/traffic innovation, depot optimization and sensor placement planning are removed. Audit IDs below remain historical traceability, not authorization to build removed/deferred features.
+
 # Approved upgrade planning checkpoint
 
 Approved direction: professional, feature-rich NIT final-year municipal intelligence platform. Baseline application: `f1a8d28`, branch `codex/municipal-platform`. **This checkpoint authorizes documentation only. Each of Upgrade A, B and C requires its own subsequent implementation prompt.** No feature implementation, dependency installation, cloud/hardware work, deployment, push or merge is authorized here.

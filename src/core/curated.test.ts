@@ -27,7 +27,7 @@ describe('authored municipal city collection',()=>{
   expect(targeted.eligible.length).toBeLessThan(all.eligible.length);
   expect(all.trips.reduce((n,t)=>n+t.binIds.length,0)).toBe(c.bins.length);
   for(const trip of all.trips)expect(trip.load).toBeLessThanOrEqual(c.trucks.find(t=>t.id===trip.truckId)!.capacityBinUnits+1e-8);
-  expect(advance(c,startSimulation(c,all),all.duration+1).simulation.completed.length).toBe(c.bins.length);
+  expect(()=>startSimulation(c,all)).toThrow(/pickup threshold/);
  });
  for(const original of createReadyCities())it(`${original.name}: regenerating/reordering zones preserves depot responsibility`,()=>{
   const result=regenerateZones(original,original.zones.map(z=>z.headNodeId).reverse());
@@ -42,7 +42,7 @@ describe('authored municipal city collection',()=>{
   const path=pathFinder(city);
   for(const z of city.zones){expect(city.nodes.find(n=>n.id===z.headNodeId)?.type).toBe('HEAD');expect(city.trucks.some(t=>t.zoneId===z.id)).toBe(true);for(const id of z.binIds){const b=city.bins.find(b=>b.id===id)!;expect(Number.isFinite(path(z.headNodeId,b.roadNodeId).distance)).toBe(true);expect(Number.isFinite(path(b.roadNodeId,z.headNodeId).distance)).toBe(true);}}
   const p=planCollection(city);expect(p.eligible.length).toBeGreaterThan(0);
-  if(city.name==='Amberfort Old Quarter'){expect(p.pending.length).toBeGreaterThan(0);expect(p.pending.every(b=>b.reason.includes('Unassigned'))).toBe(true);}else expect(p.pending).toEqual([]);
+  expect(p.pending).toEqual([]);
   expect(new Set([...p.trips.flatMap(t=>t.binIds),...p.pending.map(b=>b.binId)]).size).toBe(p.eligible.length);
   for(const t of p.trips){const zone=city.zones.find(z=>z.id===t.zoneId)!;expect(t.nodes.every(id=>zone.nodeIds.includes(id)||id===zone.headNodeId)).toBe(true);expect(t.load).toBeLessThanOrEqual(city.trucks.find(v=>v.id===t.truckId)!.capacityBinUnits+1e-8);for(let i=1;i<t.nodes.length;i++)expect(city.roads.some(r=>r.fromNodeId===t.nodes[i-1]&&r.toNodeId===t.nodes[i])).toBe(true);}
   const done=advance(city,startSimulation(city,p),p.duration+1);expect(done.simulation.completed.length+p.pending.length).toBe(p.eligible.length);expect(done.simulation.running).toBe(false);expect(done.simulation.completed.every(id=>done.city.bins.find(b=>b.id===id)!.fillPercent===0)).toBe(true);

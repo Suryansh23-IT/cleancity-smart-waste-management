@@ -1,5 +1,5 @@
 import {boardGraph,binSites,board} from './showcaseLayout';
-import {City, clone} from './model';
+import {City, clone, defaultTruckCapacity} from './model';
 import {blankCity} from './presets';
 import {autoZone} from './zoning';
 import {parsePhysical,PhysicalBin} from './physical';
@@ -9,7 +9,7 @@ export function showcaseCity():City{
  const c=blankCity();c.showcase=true;c.id='showcase-ten-board-v2';c.name='CleanCity 90 x 60 showcase';c.description='Shared physical/digital 90 x 60 cm board. Model distances are illustrative, not measured municipal km. Four central REAL mounts; six VIRTUAL bins. Physical fit requires actual bin and wire measurements.';c.width=board.width;c.height=board.height;
  Object.assign(c,boardGraph());c.settings={...c.settings,zoneCount:1,seed:101};
  c.bins=binSites.map((p,i)=>({id:p.id,name:i<4?`REAL PHYSICAL · ${p.id} · awaiting snapshot`:`VIRTUAL · ${p.id}`,roadNodeId:p.access,position:{x:p.x,y:p.y},fillPercent:i<4?0:15+i,capacityBinUnits:1,source:'SIMULATED',history:[]}));
- c.zones=autoZone(c,['depot']).zones;c.trucks=[{id:'show-truck-0',label:'Showcase truck',zoneId:c.zones[0].id,capacityBinUnits:3,speedGrade:2,available:true}];return c;
+ c.zones=autoZone(c,['depot']).zones;c.trucks=[{id:'show-truck-0',label:'Showcase truck',zoneId:c.zones[0].id,capacityBinUnits:defaultTruckCapacity,speedGrade:2,available:true}];return c;
 }
 export function previewReadings(input:unknown,now=Date.now()):PhysicalBin[]{
  const d=input as {origin?:string;receiver?:{connected?:boolean}};if(d?.origin!=='LOCAL_USB'||!d.receiver?.connected)throw Error('Local receiver unavailable or disconnected');const rows=parsePhysical(input);

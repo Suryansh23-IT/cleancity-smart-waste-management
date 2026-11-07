@@ -11,12 +11,14 @@ export default function MapSurface({
   streets: Street[];
   context: boolean;
 }) {
-  const parcels = useMemo(() => landParcels(city), [city.nodes]);
+  const board = isBoardShowcase(city);
+  const artwork = useMemo(() => board ? showcaseArtwork(city, false) : "", [board, city.nodes, city.roads, city.bins]);
+  const parcels = useMemo(() => !board && context ? landParcels(city) : [], [board, context, city.nodes]);
   const buildings = useMemo(
-    () => footprints(city, streets),
-    [city.nodes, streets],
+    () => !board && context ? footprints(city, streets) : [],
+    [board, context, city.nodes, streets],
   );
-  if(isBoardShowcase(city))return <g className="shared-showcase-board" pointerEvents="none" dangerouslySetInnerHTML={{__html:showcaseArtwork(city,false)}}/>;
+  if(board)return <g className="shared-showcase-board" pointerEvents="none" dangerouslySetInnerHTML={{__html:artwork}}/>;
   return (
     <g className="urban-surface" pointerEvents="none">
       {context && (

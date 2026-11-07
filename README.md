@@ -13,9 +13,11 @@ CleanCity combines an interactive city editor, zone-based fleet operations and a
 | Routing and simulation | Directed graph paths, zone-contained truck routes, capacity-aware trips, depot returns/unloading and animated collection |
 | Local IoT prototype | Real four-channel USB → Node → SQLite → Physical IoT Lab pipeline demonstrated with user-connected hardware |
 | Final physical showcase | Pending: four dustbins, mounting, measured calibration and final repeatability/failure testing |
-| Full-stack product | Pending: F2 Node/Express/MongoDB persistence, remaining F3 intelligence, F4 quality gates and deployment |
+| Full-stack product | Protected Node/Express/MongoDB persistence, migration and saved history are implemented and verified locally. Real Atlas acceptance and production qualification are pending. |
 
-**Latest recorded validation:** 140 automated tests passed across 13 files; TypeScript and production build passed. Desktop/emulated-mobile browser workflows were verified during F1 development. These are checkpoint results, not a claim of complete physical or cloud acceptance. See the [verification record](docs/milestone-checkpoint-verification.md).
+**F1–F3 checkpoint validation:** 179 automated tests passed with the real Atlas test skipped. TypeScript, production build and local municipal API bundling passed. The [engineering audit](docs/final-deep-engineering-audit.md) records browser playback on all 12 maps and the remaining release gates.
+
+The [locked delivery roadmap](docs/locked-delivery-roadmap.md) supersedes older advanced-feature plans. F2 uses a separate municipal API; the proven USB/SQLite receiver remains intact. See [F2 local setup and Atlas prerequisites](docs/f2-local-setup.md). No Atlas credentials are included.
 
 ## What works today
 

@@ -1,4 +1,4 @@
-import { City, uid } from "../core/model";
+import { City, uid, defaultTruckCapacity } from "../core/model";
 import {truckZoneAssignments} from '../core/routing';
 import { Plus, Truck } from "lucide-react";
 import { useState } from 'react';
@@ -39,7 +39,7 @@ export default function FleetPanel({
                 {
                   id: uid("truck"),
                   label: `Truck ${city.trucks.length + 1}`,
-                  capacityBinUnits: 8,
+                  capacityBinUnits: defaultTruckCapacity,
                   speedGrade: 2,
                   available: true,
                 },

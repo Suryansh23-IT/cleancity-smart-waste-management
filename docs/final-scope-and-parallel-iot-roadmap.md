@@ -1,3 +1,5 @@
+> **Superseded scope/status (7 November 2026):** Follow [the locked F1–F4 roadmap](locked-delivery-roadmap.md). F1 complete; F2 backend persistence; F3 existing-software QA/deployment readiness; F4 focused physical acceptance. Road closure/traffic innovation, depot optimization and sensor placement planning are removed. Audit IDs below remain historical traceability, not authorization to build removed/deferred features.
+
 # CleanCity — final frozen scope and parallel four-sensor roadmap
 
 Audit date: 6 November 2026. Read-only investigation except this report. No application edits, dependency installation, test execution, browser/desktop access, hardware actions or Git mutation performed by this audit.

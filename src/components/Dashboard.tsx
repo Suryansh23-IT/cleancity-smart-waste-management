@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -10,12 +10,17 @@ import {
   Settings2,
   BarChart3,
   Search,
+  Boxes,
+  FlaskConical,
+  Activity,
 } from "lucide-react";
 import { City, status } from "../core/model";
-import { Plan, truckZoneAssignments } from "../core/routing";
+import { Plan, planCollection, truckZoneAssignments } from "../core/routing";
+import { forecast } from "../core/forecast";
 import { Simulation } from "../core/simulation";
 import { operationProgress } from "../core/insights";
 import { BinFilter, reviewBins, workspaceStatus } from "../core/workspace";
+const rupees = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 export default function Dashboard({
   city,
   plan,
@@ -29,6 +34,7 @@ export default function Dashboard({
   onPlan,
   onStart,
   onDemo,
+  storageError,
 }: {
   city: City;
   plan: Plan | null;
@@ -42,16 +48,29 @@ export default function Dashboard({
   onPlan: () => void;
   onStart: () => void;
   onDemo: () => void;
+  storageError?: string;
 }) {
   const s = workspaceStatus(city, plan, sim),
     p = plan ? operationProgress(city, plan, sim) : null,
     [query, setQuery] = useState("");
+  const snapshot = city.showcaseSnapshot, awaitingSnapshot = !!city.showcase && !snapshot;
+  const source = city.showcase ? snapshot?.mode === 'TEST' ? 'TEST fixture snapshot' : snapshot ? 'Captured physical inputs' : 'No snapshot captured' : 'Simulated municipal data';
+  const original = sim?.original ?? city;
+  const routine = useMemo(() => plan && !plan.pending.length && !awaitingSnapshot ? planCollection(original, false, true) : null, [original, plan, awaitingSnapshot]);
+  const savings = routine && plan && !routine.pending.length ? routine.cost - plan.cost : null;
+  const assignments = useMemo(() => truckZoneAssignments(city), [city]);
+  const outlook = useMemo(() => {
+    if(awaitingSnapshot)return null;
+    const clock=(sim?.original ?? city).bins.reduce((latest,b)=>b.history.reduce((t,h)=>Math.max(t,h.time),latest),0)+(sim?.time??0)*60000;
+    return city.bins.flatMap(b=>{if(b.fillPercent>=city.settings.pickupThreshold)return [];const f=forecast(b.history,city.settings.pickupThreshold,clock);return f.hours!==null&&f.hours>0&&Number.isFinite(f.hours)?[{bin:b,hours:f.hours,quality:f.quality}]:[];}).sort((a,b)=>a.hours-b.hours).slice(0,3);
+  },[city,sim,awaitingSnapshot]);
+  const stage=awaitingSnapshot?'Snapshot required':s.done?'Run complete':sim?.running?'Playback running':sim?'Playback paused':plan?.trips.length?(plan.pending.length?'Ready with exceptions':'Dispatch ready'):plan?'No trips scheduled':'Plan not prepared';
   const chooseFilter = (f: BinFilter) => {
     setQuery("");
     onReview(f);
   };
   const bins = reviewBins(city, plan, sim, filter, query);
-  const primary = s.done
+  const primary = awaitingSnapshot ? {label:'Capture showcase snapshot',go:()=>onNavigate('Physical IoT Lab','iot-showcase')} : s.done
     ? {
         label: "Review collection results",
         go: () => onNavigate("Analytics & What-If"),
@@ -119,7 +138,7 @@ export default function Dashboard({
         (plan
           ? `${plan.trips.length} trips · ${plan.pending.length} unserved`
           : "Use current fills, road directions and truck capacities."),
-      disabled: !!s.planReason,
+      disabled: awaitingSnapshot || !!s.planReason,
       done: !!plan,
       icon: Route,
       go: onPlan,
@@ -130,7 +149,7 @@ export default function Dashboard({
         ? "Inspect progress, pause, step or reset the current run."
         : (s.startReason ??
           "Animate planned pickups; changes are simulated only."),
-      disabled: !sim && !!s.startReason,
+      disabled: awaitingSnapshot || (!sim && !!s.startReason),
       done: s.done,
       icon: Play,
       go: sim ? () => onNavigate("Collection Simulator") : onStart,
@@ -149,11 +168,10 @@ export default function Dashboard({
     <div className="operations-dashboard">
       <section className="mission-banner">
         <div>
-          <span className="eyebrow">MUNICIPAL COLLECTION CONTROL</span>
+          <span className="eyebrow">COLLECTION OPERATIONS</span>
           <h2>{city.name}</h2>
           <p>
-            {s.eligible.length} bins require pickup. {s.available.length} trucks available.
-            Review exceptions, then test your collection response.
+            {awaitingSnapshot?'Capture planning inputs before assessing the four mapped sensor bins.':`${s.eligible.length} bins currently meet the pickup threshold. ${s.available.length} of ${city.trucks.length} trucks available.`}
           </p>
           {plan && plan.pending.length > 0 && (
             <button
@@ -166,12 +184,13 @@ export default function Dashboard({
             </button>
           )}
           <span className="simulation-label">
-            SIMULATED MUNICIPAL DATA · Local planning workspace
+            {source} · Local workspace
           </span>
+          {city.showcase && <small className="showcase-source-note">4 mapped sensor bins · 6 virtual bins · collection is simulated</small>}
         </div>
         <div className="mission-action">
-          <small>YOUR NEXT STEP</small>
-          <strong>{s.stage}</strong>
+          <small>COLLECTION STATUS</small>
+          <strong>{stage}</strong>
           <button className="primary" onClick={primary.go}>
             {primary.label}
             <ArrowRight size={16} />
@@ -181,15 +200,16 @@ export default function Dashboard({
           </button>
         </div>
       </section>
+      {storageError && <p className="dashboard-storage-alert" role="alert"><AlertTriangle size={17}/>{storageError}</p>}
       <section className="dashboard-kpis" aria-label="Municipal situation">
         <button className="situation-kpi" onClick={() => chooseFilter("ALL")}>
-          <small>Collection bins</small>
+          <small><Boxes size={15}/> Collection bins</small>
           <strong>
             {city.bins.length}
             <em> bins</em>
           </strong>
           <span>
-            {s.normal} normal · {s.eligible.length} require pickup
+            {awaitingSnapshot?'Demand awaits snapshot':`${s.normal} below threshold · ${s.eligible.length} require pickup`}
           </span>
           <b>Inspect bins →</b>
         </button>
@@ -197,10 +217,10 @@ export default function Dashboard({
           className="situation-kpi urgent-kpi"
           onClick={() => chooseFilter("URGENT")}
         >
-          <small>Urgent attention</small>
+          <small><AlertTriangle size={15}/> Urgent attention</small>
           <strong>
-            {s.urgent.length}
-            <em> bins</em>
+            {awaitingSnapshot?'—':s.urgent.length}
+            {!awaitingSnapshot&&<em> bins</em>}
           </strong>
           <span>Fill ≥{city.settings.urgentThreshold}% · priority review</span>
           <b>Review urgent →</b>
@@ -209,7 +229,7 @@ export default function Dashboard({
           className="situation-kpi"
           onClick={() => onNavigate("Zone & Fleet Operations", "zone-setup")}
         >
-          <small>Bins assigned to a zone</small>
+          <small><MapPin size={15}/> Zone coverage</small>
           <strong>
             {city.bins.length
               ? `${Math.round((s.assigned.size / city.bins.length) * 100)}%`
@@ -226,14 +246,14 @@ export default function Dashboard({
           className="situation-kpi"
           onClick={() => onNavigate("Zone & Fleet Operations", "fleet-setup")}
         >
-          <small>Trucks ready to work</small>
+          <small><Truck size={15}/> Fleet availability</small>
           <strong>
             {s.available.length}
             <em> available</em>
           </strong>
           <span>
             {plan
-              ? `${sim ? p?.trucks.filter((t) => !["AVAILABLE", "UNAVAILABLE", "COMPLETED", "PLANNED"].includes(t.state)).length : s.planned.size} ${sim ? "active" : "planned"} · ${city.trucks.length - s.available.length} unavailable`
+              ? `${sim ? p?.trucks.filter((t) => !["AVAILABLE", "UNAVAILABLE", "COMPLETED", "PLANNED"].includes(t.state)).length : s.planned.size} ${sim ? sim.running ? "in operation" : "on active legs" : "scheduled"} · ${city.trucks.length - s.available.length} unavailable`
               : "No dispatch plan yet"}
           </span>
           <b>Manage trucks →</b>
@@ -242,34 +262,40 @@ export default function Dashboard({
       <div className="dashboard-workspace">
         <div className="dashboard-map-column">
           {map}
-          <div className="plan-strip">
+          <div className="plan-strip" aria-label="Modeled operating estimates">
             <div>
-              <small>Road distance</small>
-              <b>{plan ? `${plan.distance.toFixed(2)} km` : "Plan needed"}</b>
+              <small>{sim?'Distance traveled':'Planned distance'}</small>
+              <b>{plan ? `${(sim?p!.distance:plan.distance).toFixed(2)} km` : "—"}</b>
             </div>
             <div>
-              <small>Fleet completion</small>
+              <small>{sim?'Elapsed playback':'Planned fleet time'}</small>
               <b>
                 {plan
-                  ? `${plan.duration.toFixed(1)} virtual min`
-                  : "Not estimated"}
+                  ? `${(sim?.time??plan.duration).toFixed(1)} min`
+                  : "—"}
               </b>
             </div>
-            <button
-              onClick={() =>
-                plan
-                  ? chooseFilter("PENDING")
-                  : onNavigate("Collection Simulator")
-              }
-            >
-              <small>Unserved pickups</small>
-              <b>
-                {plan ? plan.pending.length : "Check with a plan"}{" "}
-                <ArrowRight size={12} />
-              </b>
+            <div><small>Modeled plan cost</small><b>{plan?rupees.format(plan.cost):'—'}</b></div>
+            <button onClick={()=>onNavigate('Analytics & What-If')}>
+              <small>{savings!==null&&savings<0?'Extra cost vs full round':'Savings vs full round'}</small>
+              <b>{!plan?'Plan needed':savings===null?'Not comparable':rupees.format(Math.abs(savings))} <ArrowRight size={12}/></b>
             </button>
           </div>
         </div>
+        <section className="panel dashboard-brief" aria-label="Dispatch status">
+          <span className="eyebrow">CURRENT OPERATION</span><h3>{stage}</h3>
+          {p && plan ? <>
+            <div className="dispatch-brief-counts"><div><strong>{p.completed}</strong><small>Completed</small></div><div><strong>{p.remaining}</strong><small>{sim?'Remaining':'Scheduled'}</small></div><div><strong>{p.pending}</strong><small>Unserved</small></div></div>
+            {sim && <progress aria-label="Scheduled pickup progress" max={Math.max(1,p.completed+p.remaining)} value={p.completed}/>}
+            <p>{plan.trips.length} planned trips{sim?' · virtual playback only':' · no simulation started'}</p>
+          </> : <p>{awaitingSnapshot?'Snapshot capture unlocks planning.':'Plan collection to see scheduled and unserved pickups.'}</p>}
+          {plan?.pending.length ? <button className="brief-exception" onClick={()=>chooseFilter('PENDING')}><AlertTriangle size={16}/> Inspect unserved pickups <ArrowRight size={14}/></button> : null}
+          <nav aria-label="Dashboard shortcuts">
+            <button onClick={()=>onNavigate('Zone & Fleet Operations')}><Route size={16}/> Open Dispatch <ArrowRight size={14}/></button>
+            <button onClick={()=>onNavigate('City Studio')}><MapPin size={16}/> Open City Studio <ArrowRight size={14}/></button>
+            <button onClick={()=>onNavigate('Physical IoT Lab')}><FlaskConical size={16}/> Open Physical IoT Lab <ArrowRight size={14}/></button>
+          </nav>
+        </section>
         <aside
           className="panel action-center"
           aria-label="Operator action center"
@@ -396,7 +422,7 @@ export default function Dashboard({
               <ArrowRight size={15} />
             </button>
           )}
-          {city.bins.length > 0 &&
+          {!awaitingSnapshot && city.bins.length > 0 &&
             city.zones.length > 0 &&
             s.available.length > 0 &&
             !s.urgent.length &&
@@ -424,7 +450,7 @@ export default function Dashboard({
           </div>
           {sim && p && (
             <div className="result-preview">
-              <b>{s.done ? "Run finished" : "Run in progress / paused"}</b>
+                <b>{s.done ? "Run finished" : sim.running ? "Run in progress" : "Run paused"}</b>
               <p>
                 {p.completed} collected · {p.remaining} scheduled remaining ·{" "}
                 {p.pending} unserved
@@ -454,20 +480,20 @@ export default function Dashboard({
                       {z.binIds.length} bins ·{" "}
                       {
                         city.trucks.filter(
-                          (t) => truckZoneAssignments(city).get(t.id) === z.id,
+                          (t) => t.available && assignments.get(t.id) === z.id,
                         ).length
                       }{" "}
                       available trucks
                     </small>
                   </div>
                   <strong>
-                    {
+                    {awaitingSnapshot?'—':(
                       city.bins.filter(
                         (b) =>
                           z.binIds.includes(b.id) &&
                           b.fillPercent >= city.settings.pickupThreshold,
                       ).length
-                    }
+                    )}
                     <small>need pickup</small>
                   </strong>
                 </li>
@@ -479,6 +505,11 @@ export default function Dashboard({
               are configured.
             </p>
           )}
+        </section>
+        <section className="panel dashboard-outlook" aria-label="Fill outlook">
+          <div className="section-heading"><h3><Activity size={18}/> Fill outlook</h3><button onClick={()=>onNavigate('Analytics & What-If')}>Forecast details <ArrowRight size={14}/></button></div>
+          <p>Next expected pickup thresholds from modeled fill history.</p>
+          {outlook?.length ? <ul>{outlook.map(({bin,hours,quality})=><li key={bin.id}><span><b>{bin.name}</b><small>{quality}</small></span><strong>~{hours.toFixed(1)} h</strong></li>)}</ul> : <p className="outlook-empty">{awaitingSnapshot?'Capture a snapshot first.':'No projected crossings from usable, growing fill history.'}</p>}
         </section>
       </div>
       {showReview && (

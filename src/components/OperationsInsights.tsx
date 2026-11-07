@@ -134,6 +134,7 @@ export function ZoneWorkload({
     <section className="panel" aria-label="Zone workload">
       <span className="eyebrow">RESPONSIBILITY & DEMAND</span>
       <h3>Neighbourhood workload</h3>
+      <p className="small">Demand and pickup load reflect the collection inputs. See simulation progress for completed pickups.</p>
       {zones.length ? (
         <div className="table-scroll">
           <table>
@@ -218,7 +219,7 @@ export function Forecasts({
         ? "Reached"
         : `~${f.hours.toFixed(1)} h`;
   return (
-    <section className="panel" aria-label="Fill forecasts">
+    <section className="panel" id="fill-forecasts" aria-label="Fill forecasts">
       <span className="eyebrow">RULE-BASED · RECENT AVERAGE GROWTH</span>
       <h3>Time to collection and urgent thresholds</h3>
       <div className="table-scroll forecast-table">
@@ -323,8 +324,9 @@ export function ComparisonDetails({
             : "Positive reductions indicate lower modeled requirements; zero and negative results are retained."
           : "Different pickup coverage: no savings claim is made."}{" "}
         Fleet completion is elapsed time; vehicle labor sums all truck time.
-        Routes minimize distance using a heuristic, not guaranteed optimal
-        travel time.
+        Each leg uses a shortest legal road distance within its zone. Pickup order
+        prioritizes urgency and nearby feasible stops. The full schedule can be
+        longer than another feasible schedule.
       </p>
     </div>
   );

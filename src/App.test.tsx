@@ -7,6 +7,7 @@ import { preset } from "./core/presets";
 import { autoZone } from "./core/zoning";
 import { saveLibrary, loadLibrary } from "./core/storage";
 import { parseCity } from "./core/model";
+import {showcaseCity} from './core/showcase';
 
 // Large map workflows render hundreds of accessible SVG objects in jsdom.
 vi.setConfig({ testTimeout: 15000 });
@@ -86,7 +87,12 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     expect(text()).toContain('Collection paused');
     await click('Finish run');await click('View collection analysis');
     expect(container.querySelector('[aria-label="Results overview"]')).not.toBeNull();
-    expect(text()).toContain('summed vehicle hours');expect(text()).toContain('plans and run results stay in this tab');
+    expect(text()).toContain('summed vehicle hours');expect(text()).toContain('runs stay in this tab unless explicitly saved');
+    const workload = container.querySelector('[aria-label="Zone workload"]');
+    expect(workload?.textContent).toContain('reflect the collection inputs');
+    expect([...workload!.querySelectorAll("tbody tr")].some((row) =>
+      Number.parseFloat(row.querySelectorAll("td")[3].textContent ?? "0") > 0,
+    )).toBe(true);
   });
   it('shows four honest physical slots without manufacturing sensor values',async()=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:503}));
@@ -94,7 +100,16 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     expect(container.querySelectorAll('.bin-gauge')).toHaveLength(4);
     expect(text()).toContain('Telemetry receiver is not configured or unavailable');
     expect(text().match(/NO READING/g)).toHaveLength(4);
-    expect(text()).not.toContain('Supabase');expect(text()).toContain('Live hardware verification requires authorized COM access');
+    expect(text()).not.toContain('Supabase');expect(text()).toContain('Four physical channels · separate from simulated collection');
+  });
+  it("explains a non-JSON receiver outage without leaking parser errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>Offline</html>", { status: 503 })));
+    await mount();
+    await click("Physical IoT Lab");
+    await click("Detect ports");
+    const controls = container.querySelector('[aria-label="USB serial connection"]');
+    expect(controls?.textContent).toContain("Local receiver unavailable");
+    expect(controls?.textContent).not.toContain("Unexpected token");
   });
   it('distinguishes invalid, stale and absent physical contract readings',async()=>{
     const history:never[]=[];
@@ -198,10 +213,20 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     expect(container.querySelector('.inspector input[name="name"]')).not.toBeNull();
     expect(container.querySelectorAll('.map-road')).toHaveLength(before);
   });
+  it('does not treat uncaptured showcase sensor placeholders as known pickup demand',async()=>{
+    saveLibrary(localStorage,[showcaseCity()]);await mount();
+    expect(container.querySelector('.mission-banner')?.textContent).toContain('No snapshot captured');
+    expect(container.querySelector('.dashboard-kpis')?.textContent).toContain('Demand awaits snapshot');
+    expect(button('Plan pickups').disabled).toBe(true);
+    await click('Capture showcase snapshot');await click('Preview TEST fixtures');await click('Confirm TEST snapshot');await click('Dashboard');
+    expect(container.querySelector('.mission-banner')?.textContent).toContain('TEST fixture snapshot');
+    expect(container.querySelector('.dashboard-kpis')?.textContent).toContain('4 require pickup');
+  });
   it("introduces the municipal use case, filters real exceptions and replans after an operator fixes one", async () => {
     await mount();
-    expect(text()).toContain("SIMULATED MUNICIPAL DATA");
-    expect(text()).toContain("Review exceptions, then test your collection response.");
+    expect(text()).toContain("Simulated municipal data · Local workspace");
+    expect(container.querySelector('.dashboard-brief')?.textContent).toContain('Ready with exceptions');
+    expect(container.querySelector('.plan-strip')?.textContent).toContain('Not comparable');
     expect(button("Start simulation").disabled).toBe(false);
     await act(async () =>
       container.querySelector<HTMLButtonElement>(".urgent-kpi")!.click(),

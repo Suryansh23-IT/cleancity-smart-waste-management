@@ -1,0 +1,19 @@
+# Local-only evidence, device data and credentials must not enter upload artifacts.
+.env
+.env.*
+!.env.example
+.local/
+build/
+coverage/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db-wal
+*.db-shm
+*.log
+CleanCity-full-resolution.png
+firmware/
+**/*.test.ts
+**/*.test.tsx
+server/municipal/testStore.ts

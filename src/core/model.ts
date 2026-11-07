@@ -84,6 +84,7 @@ export const colors = [
   "#f189ad",
   "#d1d77a",
 ];
+export const defaultTruckCapacity = 4;
 export const defaults: Settings = {
   zoneCount: 3,
   pickupThreshold: 80,

@@ -48,7 +48,7 @@ export function autoZone(
   }));
   const warnings: string[] = [];
   const distances = (node: string, i: number) => weak(heads[i], node).distance;
-  // Increasing graph distance assigns nearby nodes first; small workload penalty balances boundaries.
+  // Increasing weak-graph distance assigns nearby nodes first.
   const order = [...c.nodes].sort(
     (a, b) =>
       Math.min(...heads.map((_, i) => distances(a.id, i))) -

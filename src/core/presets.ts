@@ -1,4 +1,4 @@
-import { City, clone, defaults } from "./model";
+import { City, clone, defaults, defaultTruckCapacity } from "./model";
 export function random(seed: number) {
   let a = seed | 0;
   return () => {
@@ -25,7 +25,7 @@ export function blankCity(): City {
       {
         id: "truck-1",
         label: "Truck 01",
-        capacityBinUnits: 8,
+        capacityBinUnits: defaultTruckCapacity,
         speedGrade: 2,
         available: true,
       },
@@ -107,7 +107,7 @@ export function preset(count: number): City {
   c.trucks = [0, 1].map((i) => ({
     id: `truck-${i + 1}`,
     label: `Truck 0${i + 1}`,
-    capacityBinUnits: 8,
+    capacityBinUnits: defaultTruckCapacity,
     speedGrade: 2 + i,
     available: true,
   }));

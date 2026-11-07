@@ -1,3 +1,5 @@
+> **Superseded scope/status (7 November 2026):** Follow [the locked F1–F4 roadmap](locked-delivery-roadmap.md). F1 complete; F2 backend persistence; F3 existing-software QA/deployment readiness; F4 focused physical acceptance. Road closure/traffic innovation, depot optimization and sensor placement planning are removed. Audit IDs below remain historical traceability, not authorization to build removed/deferred features.
+
 # Completion checkpoints
 
 Latest scoped municipal M1–M3 work is implemented and verified: light UI, fleet/zone progress, both forecast horizons and expanded analytics. See [current acceptance evidence](municipal-acceptance.md). Remaining work begins at the separate C4 physical-cloud boundary; real touch-device verification remains unexecuted. The status table below is retained as the preceding checkpoint baseline.

@@ -76,27 +76,30 @@ export default function PhysicalLab() {
         <div>
           <span className="eyebrow">PHYSICAL IOT LAB</span>
           <h3>Real devices. Real observations.</h3>
-          <p>Four sensor channels · one demonstration bin · independent of the municipal simulator</p>
-          <small>Local path: ESP32 → USB serial → Node receiver → SQLite → this view. Live hardware verification requires authorized COM access.</small>
+          <p>Four physical channels · separate from simulated collection</p>
+          <small>Readings come from the local USB receiver and its saved history.</small>
         </div>
         <span className="pill">
           {error
             ? "NO VERIFIED DATA"
             : bins.length
               ? local ? "LOCAL PHYSICAL" : "PHYSICAL TELEMETRY"
-              : "NO VERIFIED DATA"}
+              : loading ? "CHECKING RECEIVER" : "NO VERIFIED DATA"}
         </span>
         <button disabled={loading} onClick={() => refresh()}>
           <RefreshCw size={16} />
           {loading ? "Checking…" : "Refresh"}
         </button>
+        <a className="workspace-jump" href="#iot-showcase">Go to 10-bin showcase ↓</a>
       </section>
+      <div className="lab-connection-grid">
       <SerialConnection onChange={()=>{void refresh();}}/>
       <section className="panel" aria-label="Automatic USB connection status" role="status">
         <b>Automatic USB monitoring</b>
-        <p>{error ? 'Local receiver unavailable — USB cannot be read directly by this website.' : local ? `Receiver: ${receiver?.connected?'PORT OPEN':'DISCONNECTED'} · ${receiver?.port??'No port selected'} · Fresh valid channels: ${bins.filter(b=>b.status==='VALID'&&b.receivedAt&&now-Date.parse(b.receivedAt)<=10000&&Date.parse(b.receivedAt)<=now+5000).length}/4` : 'Checking telemetry receiver…'}</p>
+        <p>{error ? 'Local receiver unavailable — USB cannot be read directly by this website.' : local ? `Receiver: ${receiver?.connected?'PORT OPEN':'DISCONNECTED'} · ${receiver?.port??'No port selected'} · Fresh valid channels: ${receiver?.connected?bins.filter(b=>b.status==='VALID'&&b.receivedAt&&now-Date.parse(b.receivedAt)<=10000&&Date.parse(b.receivedAt)<=now+5000).length:0}/4` : checked ? 'Local USB receiver status is unavailable from this source.' : 'Checking telemetry receiver…'}</p>
         <small>Updates automatically every second while this Lab is open. The local receiver must be running with your explicitly selected COM port; it retries that same port after a USB reconnect. Fresh distance readings do not prove calibration or electrical safety.</small>
       </section>
+      </div>
       {error && (
         <div className="warning-list" role="alert">
           <AlertTriangle size={18} /> {error} Last successfully fetched
@@ -108,7 +111,7 @@ export default function PhysicalLab() {
         {[1, 2, 3, 4].map((i) => {
           const id = `BIN-${String(i).padStart(3, "0")}`,
             b = bins.find((b) => b.id === id),
-            stale = !!error || (local ? !b?.receivedAt || now-Date.parse(b.receivedAt)>10000 || Date.parse(b.receivedAt)>now+5000 : staleReading(b?.receivedAt ?? null, now)),
+            stale = !!error || (local ? !receiver?.connected || !b?.receivedAt || now-Date.parse(b.receivedAt)>10000 || Date.parse(b.receivedAt)>now+5000 : staleReading(b?.receivedAt ?? null, now)),
             s = status(b?.fillPercent ?? null, undefined, stale),
             color =
               s === "URGENT"
@@ -162,6 +165,7 @@ export default function PhysicalLab() {
                 <>
                   <h4>Recent physical fill history</h4>
                   <svg
+                    role="img"
                     viewBox="0 0 240 90"
                     aria-label={`${id} recent fill history`}
                   >
@@ -217,7 +221,7 @@ export default function PhysicalLab() {
           authoritative.
         </p>
       </section>
-      <section className="panel"><h3>Physical evidence</h3><p>Four sensor channels are user-reported as working. Only one demo bin exists. Electrical protection and per-channel calibration are not independently verified. Preserve the tested firmware and wiring; never apply 5V Echo directly to ESP32 GPIO.</p></section>
+      <section className="panel"><h3>Physical evidence</h3><p>The four-channel local pipeline was demonstrated previously. Final mounted-bin calibration, electrical checks and repeatability remain separate acceptance tasks. Preserve the tested firmware and wiring; never apply 5V Echo directly to ESP32 GPIO.</p></section>
     </>
   );
 }

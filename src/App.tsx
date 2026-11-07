@@ -1,4 +1,5 @@
 import ShowcasePanel from './components/ShowcasePanel';
+import DatabaseWorkspace,{type StoredCity} from './components/DatabaseWorkspace';
 import {showcaseCity} from './core/showcase';
 import { useEffect, useRef, useState } from "react";
 import {
@@ -92,6 +93,7 @@ const money = (v: number) =>
   }).format(v);
 const fixed = (n: number) => n.toFixed(2);
 export default function App() {
+  const [databaseSelection,setDatabaseSelection]=useState<StoredCity|null>(null);
   const [initial] = useState(() => {
     try {
       const list = loadLibrary(localStorage);
@@ -121,7 +123,7 @@ export default function App() {
         : planCollection(initial.city, true),
     ),
     [sim, setSim] = useState<Simulation | null>(null),
-    [speed, setSpeed] = useState(10),
+    [speed, setSpeed] = useState(1),
     [notice, setNotice] = useState(initial.error),
     [warnings, setWarnings] = useState<string[]>([]),
     [dirty, setDirty] = useState(false),
@@ -290,10 +292,12 @@ export default function App() {
       return false;
     }
   }
-  function load(c: City, ready = false, destination?: string) {
+  function load(c: City, ready = false, destination?: string, onApplied?:()=>void) {
     const apply = () => {
       setInspectorDraft(false);
       setCity(clone(c));
+      setDatabaseSelection(null);
+      onApplied?.();
       setHeads(c.zones.map(z=>z.headNodeId));
       setPast([]);
       setFuture([]);
@@ -683,7 +687,7 @@ export default function App() {
       tabIndex={-1}
     >
       <div>
-        <span className="eyebrow">04 / SMARTER COLLECTION</span>
+        <span className="eyebrow">SIMULATED COLLECTION · VIRTUAL CLOCK</span>
         <h3>
           {sim
             ? sim.time >= sim.plan.duration
@@ -821,7 +825,7 @@ export default function App() {
           </span>
         </a>
         <span className="nav-label">WORKSPACE</span>
-        <nav>
+        <nav aria-label="CleanCity workspaces">
           {pages.map((p) => (
             <button
               key={p.name}
@@ -833,6 +837,7 @@ export default function App() {
                     : p.name
               }
               className={page === p.name ? "active" : ""}
+              aria-current={page===p.name?'page':undefined}
               onClick={() => {
                 navigate(p.name);
               }}
@@ -845,17 +850,14 @@ export default function App() {
                     ? "Analytics"
                     : p.name}
               </span>
-              {p.name === "Physical IoT Lab" && <i className="offline-dot" />}
             </button>
           ))}
         </nav>
         <div className="sidebar-note">
           <ShieldCheck size={22} />
-          <b>Built for better cities.</b>
+          <b>Local workspace</b>
           <p>
-            Real observations.
-            <br />
-            Transparent simulations.
+            Plan collection with modeled city data. Physical readings stay in the IoT Lab.
           </p>
           <span className="pill">ACADEMIC DEMONSTRATION</span>
         </div>
@@ -927,7 +929,7 @@ export default function App() {
               </h1>
               <p>
                 {physical
-                  ? "Four sensor channels. Only actual measurements appear here; one demo bin is available."
+                  ? "Monitor four physical channels and capture planning inputs for the separate showcase."
                   : page === "Overview"
                     ? "Review demand. Plan feasible pickups. Simulate collection. Evaluate results."
                     : isCities
@@ -1006,7 +1008,7 @@ export default function App() {
           {physical ? (
             <>
             <PhysicalLab />
-            <section className="iot-showcase-workspace" aria-label="IoT showcase dashboard">
+            <section className="panel iot-showcase-workspace" id="iot-showcase" tabIndex={-1} aria-label="IoT showcase dashboard">
               <h2>10-bin showcase dashboard</h2>
               <p>Prepare a physical-derived or explicitly TEST planning snapshot here, then continue to the existing municipal collection workspaces.</p>
               <button onClick={()=>load(showcaseCity(),false,"Physical IoT Lab")}>Open 10-bin showcase</button>
@@ -1031,6 +1033,7 @@ export default function App() {
                   saveLibrary(localStorage, list); setLibrary(list);
                   if(c.id===city.id){setDirty(true);setLastSaved(null);}
                 }))} />}
+              {isCities && <DatabaseWorkspace city={city} simulation={sim} selected={databaseSelection} onSelection={setDatabaseSelection} onOpen={(c,record)=>load(c,false,'City Studio',()=>setDatabaseSelection(record??null))}/>}
               {!isStudio && !isCities && (
                 <section
                   className="workspace-city-bar"
@@ -1092,8 +1095,8 @@ else if (v === "demo") openDemo();
                   </button>
                 </section>
               )}
-              {(isOps||isStudio)&&<DemandSeed key={`${city.id}:${city.settings.seed}`} city={city} locked={!!sim} onApply={change}/>}
               {(isOps||isAnalytics)&&<OperationsWorkspace city={city} plan={plan} baseline={baseline} sim={sim} mode={isOps?'dispatch':'analytics'} onPlan={optimize} onContinue={()=>navigate(isOps||sim?'Collection Simulator':'Zone & Fleet Operations')} onInspect={id=>{if(isOps)setOpsMapOpen(true);else navigate('Collection Simulator');setSelection({kind:'truck',id});}}/>}
+              {isOps&&<DemandSeed key={`${city.id}:${city.settings.seed}`} city={city} locked={!!sim} onApply={change}/>}
               {isStudio && (
                 <section className="studio-guide"><div><span className="eyebrow">CITY STUDIO / EDITING WORKSPACE</span><h2>Shape your collection network.</h2><p>Select a road, bin or junction on the map to edit its properties. Changes stay local until you save.</p></div><div><button onClick={() => navigate("Cities")}>City library</button><button onClick={() => navigate("Zone & Fleet Operations")}>Continue to dispatch <ChevronRight size={15}/></button></div></section>
               )}
@@ -1436,6 +1439,7 @@ else if (v === "demo") openDemo();
                   map={mapPanel}
                   filter={binFilter}
                   showReview={showReview}
+                  storageError={initial.error}
                   onReview={review}
                   onInspect={(id) => {
                     setSelection({ kind: "bin", id });
@@ -1453,6 +1457,7 @@ else if (v === "demo") openDemo();
               {isSim && collectionControls}
               {isStudio && <StudioCreate city={city} change={change} select={setSelection} locked={!!sim}/>}
               {(isStudio || isSim) && mapPanel}
+              {isStudio&&<DemandSeed key={`${city.id}:${city.settings.seed}`} city={city} locked={!!sim} onApply={change}/>}
               {isStudio && (
                 <StudioTools
                   city={city}
@@ -1489,7 +1494,7 @@ else if (v === "demo") openDemo();
                 </section>
               )}
               {(isOps || isAnalytics) && (
-                <ZoneWorkload city={city} plan={plan} />
+                <ZoneWorkload city={sim?.original ?? city} plan={plan} />
               )}
               {isOps && (
                 <div className="below-grid operations-config">

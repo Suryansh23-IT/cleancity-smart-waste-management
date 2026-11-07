@@ -12,7 +12,10 @@ import { blankCity, preset } from "../core/presets";
 import { generateCity } from "../core/studio";
 import { autoZone } from "../core/zoning";
 import { planCollection } from "../core/routing";
-import { startSimulation } from "../core/simulation";
+import { startSimulation, tripState } from "../core/simulation";
+import { createCuratedCities } from "../core/curated";
+import { createReadyCities } from "../core/readyCities";
+import { captureSnapshot, showcaseCity, testReadings } from "../core/showcase";
 const point = (c: ReturnType<typeof blankCity>) => (id: string) =>
   c.nodes.find((n) => n.id === id)!;
 describe("urban map rendering contracts", () => {
@@ -172,5 +175,55 @@ describe("urban map rendering contracts", () => {
     for(const id of new Set(plan.trips.map(t=>t.truckId)))expect(sim).toContain(`data-truck-id="${id}"`);
     expect(sim).toContain("active-road");
     expect(sim.match(/class="map-bin"/g)).toHaveLength(10);
+  });
+  it("aligns truck playback and the active SVG leg with the graph on every retained map", () => {
+    const now = Date.UTC(2026, 10, 7);
+    const cities = [
+      ...createCuratedCities(),
+      ...createReadyCities(),
+      captureSnapshot(showcaseCity(), testReadings(now), "TEST", now),
+    ];
+    expect(cities).toHaveLength(12);
+    for (const city of cities) {
+      const plan = planCollection(city);
+      const simulation = startSimulation(city, plan);
+      const node = point(city);
+      let checkedSvg = false;
+      for (const trip of plan.trips) {
+        let start = trip.start;
+        for (const segment of trip.segments) {
+          const end = start + segment.duration;
+          if (segment.duration > 0) {
+            const midpoint = start + segment.duration / 2;
+            const state = tripState(trip, midpoint);
+            expect([state.from, state.to], city.name).toEqual([segment.from, segment.to]);
+            expect(state.state).toBe(segment.kind);
+            expect(state.fraction).toBeCloseTo(0.5, 8);
+            if (!checkedSvg && segment.from !== segment.to) {
+              const a = node(segment.from);
+              const b = node(segment.to);
+              const html = renderToStaticMarkup(
+                <CityCanvas city={city} plan={plan} simulation={{ ...simulation, time: midpoint }}
+                  selection={null} editing={false} simulationView
+                  onMove={() => {}} onCreate={() => {}} onSelect={() => {}} />,
+              );
+              const truck = html.match(/<g [^>]*class="map-truck"[^>]*>/g)?.find((tag) =>
+                tag.includes(`data-truck-id="${trip.truckId}"`));
+              expect(truck, city.name).toContain(`data-from="${a.id}" data-to="${b.id}"`);
+              const coords = truck!.match(/translate\(([^,]+),([^)]+)\)/)!;
+              expect(Number(coords[1])).toBeCloseTo((a.x + b.x) / 2, 8);
+              expect(Number(coords[2])).toBeCloseTo((a.y + b.y) / 2, 8);
+              expect(html).toContain(`M${a.x},${a.y} L${b.x},${b.y}`);
+              checkedSvg = true;
+            }
+          }
+          start = end;
+        }
+        expect(tripState(trip, trip.end)).toMatchObject({
+          from: trip.head, to: trip.head, load: 0, state: "COMPLETED",
+        });
+      }
+      if (plan.trips.some((trip) => trip.distance > 0)) expect(checkedSvg).toBe(true);
+    }
   });
 });

@@ -16,6 +16,11 @@ export interface Simulation {
 }
 export function startSimulation(city: City, plan: Plan): Simulation {
   if(city.showcase&&!city.showcaseSnapshot)throw Error('Capture a validated physical or explicitly TEST snapshot before showcase simulation.');
+  const eligible = new Set(city.bins.filter((bin) => bin.fillPercent >= city.settings.pickupThreshold).map((bin) => bin.id));
+  if (plan.eligible.length !== eligible.size || new Set(plan.eligible).size !== eligible.size ||
+      plan.eligible.some((id) => !eligible.has(id))) {
+    throw Error("Dispatch must match the current pickup threshold. Replan collection.");
+  }
   const bindings=truckZoneAssignments(city),seen=new Set<string>(),ends=new Map<string,number>();
   for(const trip of plan.trips){
     const zone=city.zones.find(z=>z.id===trip.zoneId),truck=city.trucks.find(t=>t.id===trip.truckId);
@@ -24,8 +29,15 @@ export function startSimulation(city: City, plan: Plan): Simulation {
     for(const s of trip.segments){
       if(s.from!==position||!zone.nodeIds.includes(s.from)||!zone.nodeIds.includes(s.to)||s.duration<0||!Number.isFinite(s.duration))throw Error('Route leaves its partition or has discontinuous movement. Replan collection.');
       if(s.from!==s.to&&!city.roads.some(r=>r.fromNodeId===s.from&&r.toNodeId===s.to&&r.distanceKm===s.distance))throw Error('Route references a missing road. Replan collection.');
-      if(s.kind==='COLLECTING'){const bin=city.bins.find(b=>b.id===s.binId);if(!bin||seen.has(bin.id)||!zone.binIds.includes(bin.id)||bin.roadNodeId!==s.from)throw Error('Invalid or duplicate pickup in dispatch. Replan collection.');seen.add(bin.id);load+=s.amount??0;if(load>truck.capacityBinUnits+1e-8)throw Error('Truck capacity exceeded in dispatch.');}
-      if(s.kind==='UNLOADING'){if(s.from!==zone.headNodeId)throw Error('Unloading must occur at the assigned depot.');load=0;}
+      if(s.kind==='COLLECTING'){
+        const bin=city.bins.find(b=>b.id===s.binId);
+        if(!bin||!eligible.has(bin.id)||seen.has(bin.id)||!zone.binIds.includes(bin.id)||bin.roadNodeId!==s.from||s.from!==s.to||s.distance!==0)throw Error('Invalid, ineligible or duplicate pickup in dispatch. Replan collection.');
+        const amount=bin.fillPercent*bin.capacityBinUnits/100;
+        if(s.amount!==amount)throw Error('Pickup load changed. Replan collection.');
+        seen.add(bin.id);load+=amount;
+        if(load>truck.capacityBinUnits+1e-8)throw Error('Truck capacity exceeded in dispatch.');
+      }
+      if(s.kind==='UNLOADING'){if(s.from!==zone.headNodeId||s.from!==s.to||s.distance!==0)throw Error('Unloading must occur at the assigned depot.');load=0;}
       position=s.to;distance+=s.distance;duration+=s.duration;
     }
     if(position!==zone.headNodeId||load!==0||Math.abs(trip.distance-distance)>1e-7||Math.abs(trip.end-trip.start-duration)>1e-7)throw Error('Invalid trip return or totals. Replan collection.');
@@ -54,14 +66,17 @@ export function truckSnapshot(city:City,plan:Plan,time:number,truckId:string){
  const zoneId=trip?.zoneId??truckZoneAssignments(city).get(truckId);
  const head=city.zones.find(z=>z.id===zoneId)?.headNodeId;
  if(!trip)return {state:city.trucks.find(t=>t.id===truckId)?.available?'AVAILABLE':'UNAVAILABLE',from:head,to:head,fraction:0,load:0,distance:0,zoneId,nextBinId:undefined,trip:undefined};
- let cursor=trip.start;const next=trip.segments.find(s=>{cursor+=s.duration;return s.kind==='COLLECTING'&&cursor>time;});
+ let cursor=trip.start;const next=time<trip.end?trip.segments.find(s=>{cursor+=s.duration;return s.kind==='COLLECTING'&&cursor>time;}):undefined;
  return {...tripState(trip,time),zoneId,nextBinId:next?.binId,trip};
 }
 export function routeProgress(trip:Trip,time:number){
  let cursor=trip.start;
- return trip.segments.map(segment=>{const start=cursor;cursor+=segment.duration;return {segment,start,end:cursor,phase:time>=cursor?'completed':time>=start?'current':'remaining'} as const;});
+ return trip.segments.map(segment=>{const start=cursor;cursor+=segment.duration;return {segment,start,end:Math.min(cursor,trip.end),phase:time>=trip.end||time>=cursor?'completed':time>=start?'current':'remaining'} as const;});
 }
 export function tripState(trip: Trip, time: number) {
+  // The authoritative end is start + summed durations. Repeated cursor additions
+  // can differ by a floating-point ulp and otherwise leave a finished truck unloading.
+  if(time>=trip.end)return {state:'COMPLETED' as const,from:trip.head,to:trip.head,fraction:1,load:0,distance:trip.distance};
   if (time < trip.start)
     return {
       state: "AVAILABLE" as const,
@@ -111,27 +126,30 @@ export function advance(
   const time = Math.min(sim.plan.duration, sim.time + Math.max(0, minutes)),
     completed = [...sim.completed],
     events = [...sim.events];
-  const next = clone(city);
+  const updatedBins = new Map<string, City["bins"][number]>();
   for (const trip of sim.plan.trips) {
     let cursor = trip.start;
     for (const s of trip.segments) {
       cursor += s.duration;
       if (
         s.kind === "COLLECTING" &&
-        cursor <= time &&
+        (cursor <= time || time >= trip.end) &&
         s.binId &&
         !completed.includes(s.binId)
       ) {
-        const b = next.bins.find((b) => b.id === s.binId);
+        const b = city.bins.find((b) => b.id === s.binId);
         if (b) {
-          b.fillPercent = 0;
           const historyTime =
             Math.max(
               0,
               ...sim.original.bins.flatMap((b) => b.history.map((h) => h.time)),
             ) +
             cursor * 60000;
-          b.history = [...b.history, { time: historyTime, fill: 0 }].slice(-5);
+          updatedBins.set(b.id, {
+            ...b,
+            fillPercent: 0,
+            history: [...b.history, { time: historyTime, fill: 0 }].slice(-5),
+          });
         }
         completed.push(s.binId);
         events.push({
@@ -145,7 +163,9 @@ export function advance(
   }
   events.sort((a, b) => a.time - b.time || a.message.localeCompare(b.message));
   return {
-    city: next,
+    city: updatedBins.size
+      ? { ...city, bins: city.bins.map((bin) => updatedBins.get(bin.id) ?? bin) }
+      : city,
     simulation: {
       ...sim,
       time,

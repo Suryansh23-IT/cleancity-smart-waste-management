@@ -1,0 +1,7 @@
+import {it,expect} from 'vitest';
+import {createServer} from 'node:http';
+import {hostedHandler} from './hosted';
+import {passwordHash} from './auth';
+async function probe(env:NodeJS.ProcessEnv,path:string){const server=createServer(hostedHandler(env)).listen(0,'127.0.0.1');await new Promise<void>(r=>server.once('listening',r));try{const r=await fetch(`http://127.0.0.1:${(server.address() as {port:number}).port}${path}`);return {status:r.status,body:await r.json()};}finally{await new Promise<void>(r=>server.close(()=>r()));}}
+it('fails closed without production config and rejects local-demo hashes',async()=>{expect((await probe({},'/api/health')).status).toBe(503);const env={MONGODB_URI:'mongodb://127.0.0.1:1',MONGODB_DATABASE:'cleancity_test_hosted',APP_ORIGIN:'https://example.test',OPERATOR_USERNAME:'test',WORKSPACE_ID:'test',OPERATOR_PASSWORD_HASH:await passwordHash('demo-only',true)};expect((await probe(env,'/api/health')).status).toBe(503);});
+it('serves hosted process health and rejects unauthenticated CRUD without contacting MongoDB',async()=>{const env={MONGODB_URI:'mongodb://127.0.0.1:1',MONGODB_DATABASE:'cleancity_test_hosted',APP_ORIGIN:'https://example.test',OPERATOR_USERNAME:'test',WORKSPACE_ID:'test',OPERATOR_PASSWORD_HASH:await passwordHash('strong-test-password')};expect((await probe(env,'/api/health')).status).toBe(200);expect((await probe(env,'/api/cities')).status).toBe(401);});

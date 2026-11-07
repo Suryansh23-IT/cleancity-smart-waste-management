@@ -57,11 +57,23 @@ export function createCuratedCities(): City[] {
  }
  // Historic: a one-way perimeter and inner circuits, with radial access links.
  {
-  const c=town('Amberfort Old Quarter','A historic oval of narrow one-way lanes and irregular inner squares. Continuous one-way circuits preserve access; return trips must respect their direction.');
+  const c=town('Amberfort Old Quarter','A historic oval of narrow one-way lanes. The starting service areas keep the outer ring and the two inner rings intact so each truck can return to its own depot.');
   for(let ring=0;ring<3;ring++)for(let i=0;i<12;i++){const a=i*Math.PI/6+(ring===1?.08:0), irregular=1+.1*Math.sin(i*2.3+ring);node(c,550+Math.cos(a)*(420-ring*125)*irregular+Math.sin(i*1.7+ring)*18,380+Math.sin(a)*(275-ring*80)*irregular+Math.cos(i*1.2)*13,`${['Wall','Craft','Temple'][ring]} junction ${i+1}`);}
   for(let ring=0;ring<3;ring++)for(let i=0;i<12;i++)road(c,ring*12+i,ring*12+(i+1)%12,ring===0?'Fort Ring':'Heritage lane',ring===0?.25:.12,false,ring===0);
   for(let i=0;i<12;i+=2){road(c,i,12+i,'Gate passage',.15);road(c,12+i,24+i,'Temple approach',.1);}
   finish(c,[0,18],45,1,3);
+  // A zone boundary cutting across a one-way ring breaks its return path.
+  // Keep the complete outer circuit with depot 1 and both inner circuits with depot 2.
+  c.zones = c.zones.map((zone, i) => {
+   const nodeIds = c.nodes.slice(i === 0 ? 0 : 12, i === 0 ? 12 : undefined).map(node => node.id);
+   return {
+    ...zone,
+    name: i === 0 ? 'Fort Ring service area' : 'Craft & Temple service area',
+    manual: true,
+    nodeIds,
+    binIds: c.bins.filter(bin => nodeIds.includes(bin.roadNodeId)).map(bin => bin.id),
+   };
+  });
  }
  // Metro: six nested angular rings, twelve radial avenues, four depots.
  {
