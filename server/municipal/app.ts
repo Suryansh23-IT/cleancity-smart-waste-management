@@ -6,11 +6,12 @@ import type {ArchiveRecord,CityRecord,MunicipalStore,SessionRecord} from './stor
 import {hashToken,token,validHash,verifyPassword} from './auth';
 import {planCollection} from '../../src/core/routing';
 import {startSimulation,advance} from '../../src/core/simulation';
+import {authorizeDevice,buildBatch,cloudSnapshot,type TelemetryConfig} from './cloudTelemetry';
 
 export const ENGINE_VERSION='f3-terminal-boundary-v2';
 export function canonical(value:unknown):string {return JSON.stringify(value,(_k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);}
 
-export interface ApiConfig {origin:string;username:string;passwordHash:string;workspaceId:string;secureCookies:boolean}
+export interface ApiConfig {origin:string;username:string;passwordHash:string;workspaceId:string;secureCookies:boolean;telemetry?:TelemetryConfig}
 class ApiError extends Error {constructor(public status:number,public code:string,message:string){super(message);}}
 const fail=(status:number,code:string,message:string):never=>{throw new ApiError(status,code,message);};
 export function createMunicipalApp(store:MunicipalStore,config:ApiConfig){
@@ -20,6 +21,20 @@ export function createMunicipalApp(store:MunicipalStore,config:ApiConfig){
  const app=express(),sessions=new WeakMap<Request,SessionRecord>(),attempts=new Map<string,{count:number;expires:number}>();
  app.disable('x-powered-by');
  app.use((req,res,next)=>{res.set({'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'});next();});
+ app.post('/api/telemetry/ingest', (req, _res, next) => {
+  if (!config.telemetry || !store.telemetry) return next(new ApiError(503,'TELEMETRY_DISABLED','Wi-Fi telemetry is unavailable'));
+  if (!authorizeDevice(config.telemetry, req.headers.authorization)) return next(new ApiError(401,'DEVICE_AUTH','Invalid device credentials'));
+  if (!req.is('application/json')) return next(new ApiError(415,'CONTENT_TYPE','Use application/json'));
+  next();
+ }, express.json({limit:'8kb',strict:true}), async (req,res) => {
+  let batch;
+  try { batch = buildBatch(req.body, config.workspaceId, config.telemetry!); }
+  catch { return fail(422,'TELEMETRY','Invalid sensor batch, mapping or timestamp'); }
+  const result = await store.telemetry!.save(batch);
+  if (result === 'limited') { res.set('Retry-After','5'); return fail(429,'DEVICE_RATE','Send at most one batch per five-second window'); }
+  if (result === 'conflict') return fail(409,'READING_ID','Reading ID already belongs to a different observation');
+  res.status(result === 'stored' ? 201 : 200).json({data:{status:result, batchId:batch._id}});
+ });
  app.use('/api', (req,res,next)=>{
   if(!['GET','HEAD'].includes(req.method)&&req.headers.origin!==config.origin)return next(new ApiError(403,'ORIGIN','Open the API through the configured application origin'));
   next();
@@ -47,6 +62,11 @@ export function createMunicipalApp(store:MunicipalStore,config:ApiConfig){
  app.get('/api/session',(req,res)=>{const s=sessions.get(req)!;res.json({data:{csrf:s.csrf,expiresAt:s.expiresAt},meta:{}});});
  app.delete('/api/session',async(req,res)=>{await store.deleteSession(sessions.get(req)!._id);res.clearCookie('cleancity_session',{...options,maxAge:undefined});res.status(204).end();});
  const workspace=(req:Request)=>sessions.get(req)!.workspaceId;
+ app.get('/api/telemetry/snapshot', async (req,res) => {
+  const telemetry = config.telemetry;
+  if (!telemetry || !store.telemetry) return fail(503,'TELEMETRY_DISABLED','Wi-Fi telemetry is unavailable');
+  res.json(cloudSnapshot(await store.telemetry.recent(workspace(req),telemetry.deviceId,telemetry.test),telemetry));
+ });
  const id=(req:Request)=>{const v=req.params.id;if(typeof v!=='string'||!/^[-a-zA-Z0-9]{1,160}$/.test(v))fail(400,'ID','Invalid database city identity');return v as string;};
  const revision=(req:Request)=>{const raw=req.headers['if-match'];if(!raw)fail(428,'REVISION','Read the city revision before changing it');if(typeof raw!=='string'||!/^"[1-9]\d{0,8}"$/.test(raw))fail(400,'REVISION','Invalid revision');return Number(String(raw).slice(1,-1));};
  const city=(input:unknown)=>{try{return parseCity(JSON.stringify(input));}catch{fail(422,'CITY','Invalid City JSON v1; validate references, limits and provenance in City Studio');}};

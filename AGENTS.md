@@ -2,7 +2,7 @@
 
 - F3 software checks can proceed while Atlas acceptance is pending. Record software, Atlas and physical evidence separately in docs/final-deep-engineering-audit.md.
 
-- Latest authority (7 November 2026): docs/locked-delivery-roadmap.md. F1 is complete; preserve React/Vite/TypeScript, all algorithms and the approved 90 × 60 cm single-zone showcase. F2 is Node/Express/TypeScript + MongoDB Atlas municipal persistence. Existing local ESP32 USB/Node/SQLite/Physical Lab stays separate. AWS/Supabase proposals are historical, not active requirements.
+- Preserve the F1 product and approved 90 × 60 cm showcase. MongoDB Atlas serves municipal persistence and the authorized Wi-Fi telemetry addition. The local USB/Node/SQLite receiver stays independent. See docs/production-release-checklist.md for hosted and physical acceptance gates. AWS/Supabase proposals are historical.
 - Locked order: F1 complete → F2 backend → F3 final existing-software QA/deployment readiness → F4 focused mounted/calibrated physical acceptance → separately approved final deployment. Do not build closures/traffic, depot optimization or sensor placement planning; keep existing what-if as-is. No push, hardware access or deployment without permission.
 - Suryansh and Codex own software. Vishal owns electronics and physical tests. Raj and Suryakant jointly own the flat model, four bins, roads, labels and mounts; Suryakant supplies map data and noncoding QA. Everyone assists integration; seniors document.
 - Preserve existing work/history. Review named files before staging; never commit secrets. Firmware credentials belong in ignored files. Keep dependencies modest and implementations modular.

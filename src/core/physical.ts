@@ -1,9 +1,18 @@
+export const physicalChannels = ['BIN-001', 'BIN-002', 'BIN-003', 'BIN-004'] as const;
+export const cloudStaleMs = 45000;
+export type PhysicalTransport = 'usb' | 'wifi';
+export type PhysicalOrigin = 'LOCAL_USB' | 'CLOUD_WIFI' | 'CLOUD_TEST';
+export const physicalEndpoint = (transport: PhysicalTransport) =>
+  transport === 'wifi' ? '/api/telemetry/snapshot' : '/api/physical';
+
 export interface PhysicalBin {
   id: string;
   label: string;
   distanceCm: number | null;
   fillPercent: number | null;
   receivedAt: string | null;
+  sampledAt?: string;
+  readingId?: string;
   deviceId: string;
   history: { receivedAt: string; fillPercent: number | null;distanceCm?:number|null;status?:string }[];
   status?:string;
@@ -17,6 +26,12 @@ export function staleReading(
 ): boolean {
   const time = receivedAt === null ? NaN : Date.parse(receivedAt);
   return !Number.isFinite(time) || time > now + 5000 || now - time > 90000;
+}
+export function cloudReadingAge(bin: PhysicalBin | undefined, now = Date.now()) {
+  const sample = Date.parse(bin?.sampledAt ?? '');
+  const receipt = Date.parse(bin?.receivedAt ?? '');
+  if (!Number.isFinite(sample) || !Number.isFinite(receipt) || sample > now + 5000 || receipt > now + 5000) return Infinity;
+  return Math.max(0, now - Math.min(sample, receipt));
 }
 export function parsePhysical(input: unknown): PhysicalBin[] {
   const data = input as { source?: unknown; bins?: unknown;origin?:unknown;receiver?:{connected?:unknown};staleAfterMs?:unknown };
@@ -34,6 +49,10 @@ export function parsePhysical(input: unknown): PhysicalBin[] {
   const stamp = (v: unknown) =>
     v === null || (typeof v === "string" && Number.isFinite(Date.parse(v)));
   const bins = data.bins as PhysicalBin[];
+  if ((data.origin === 'CLOUD_WIFI' || data.origin === 'CLOUD_TEST') &&
+      (data.staleAfterMs !== cloudStaleMs || bins.some(bin => !bin || typeof bin.sampledAt !== 'string' ||
+        !stamp(bin.sampledAt) || typeof bin.readingId !== 'string' || !/^[a-f0-9]{64}:BIN-00[1-4]$/.test(bin.readingId) ||
+        !bin.readingId.endsWith(':' + bin.id)))) throw Error('Invalid Wi-Fi telemetry contract');
   if (
     new Set(bins.map((b) => b?.id)).size !== bins.length ||
     bins.some(

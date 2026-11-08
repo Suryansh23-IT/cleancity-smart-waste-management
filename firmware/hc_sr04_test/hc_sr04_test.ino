@@ -13,6 +13,8 @@
   from 5V to 3.3V.
 */
 
+#include "cloud_publish.h"
+
 const int TOTAL_SENSORS = 4;
 
 const int trigPins[4] = {5, 26, 19, 32};
@@ -32,9 +34,10 @@ void setup() {
   Serial.println("============================");
   Serial.println("4 SENSOR DIAGNOSTIC SYSTEM");
   Serial.println("============================");
+  Cloud::begin();
 }
 
-void testSensor(int sensorNumber) {
+Cloud::Diagnostic testSensor(int sensorNumber) {
 
   int index = sensorNumber - 1;
 
@@ -90,6 +93,7 @@ void testSensor(int sensorNumber) {
     Serial.print(distance, 2);
     Serial.println(" cm");
   }
+  return {duration, echoBefore == HIGH, echoAfter == HIGH};
 }
 
 void loop() {
@@ -97,15 +101,18 @@ void loop() {
   Serial.println();
   Serial.println("========== NEW TEST ==========");
 
+  Cloud::Diagnostic observations[TOTAL_SENSORS];
+  const time_t sampledAt = time(nullptr);
   for (int i = 1; i <= TOTAL_SENSORS; i++) {
 
-    testSensor(i);
+    observations[i - 1] = testSensor(i);
 
     // Reduce sensor interference
     delay(70);
   }
 
   Serial.println("==============================");
+  Cloud::submit(observations, sampledAt);
 
   delay(500);
 }

@@ -10,6 +10,8 @@ Required server-only variables: `MONGODB_URI`, `MONGODB_DATABASE`, `APP_ORIGIN` 
 
 ## Release gates
 
+The authorized Atlas Wi-Fi telemetry extension is covered by the [USB and Wi-Fi release runbook](wifi-telemetry-release.md). Git pushes are checkpoints. Vercel preview and production are explicit actions. Keep the municipal and device acceptance results separate.
+
 Latest local evidence is in the [final engineering audit](final-deep-engineering-audit.md). The suite passed 179 tests with the real Atlas test skipped. Independent directed leg checks, showcase exact-tour comparison, production preview playback, TypeScript, production build and local API bundling are complete. The 4-unit showcase TEST run schedules four pickups and skips six below threshold.
 
 1. Real Atlas development persistence/restart/read-back, concurrent revision saves, migration, immutable result history and outage/recovery acceptance. Current TEST-memory evidence cannot satisfy this.

@@ -2,7 +2,15 @@
 
 7 November 2026. Governing sequence: [locked roadmap](locked-delivery-roadmap.md). Baseline main `73f1f8eb`; untracked root PNG preserved.
 
-## Inspected repository
+## Real Atlas development acceptance
+
+7 November 2026. The Free `cleancity-dev` cluster in Mumbai is active. The local municipal API and its frontend proxy both returned database-ready responses. The application database user has read/write access scoped to `cleancity_development`, and the connection string is stored in the ignored local `.env`.
+
+- A fresh acceptance workspace in the real Atlas database passed login and logout, unauthorized access and CSRF rejection, city create/read/edit, stale revision rejection, archive and restore, and idempotent migration with read-back. After recreating the Express listener and MongoDB client, the session, city revision, import identity, immutable planning inputs and replay-verified four-pickup result persisted.
+- Isolated Chromium passed operator sign-in, a database save with read-back, session resume after page refresh, inspection of the saved simulation result and reopening the edited Atlas city in City Studio. The isolated browser library was preserved. The test removed only the records in its uniquely named acceptance workspace.
+- A later release check repeated these workflows and injected an isolated connection refusal. The same API returned 503, then reached the real Atlas cluster on retry. It also stored a labeled four-channel TEST batch, deduplicated a retry, and read its history after restarting the API and MongoDB client. Cleanup was scoped to the unique acceptance workspace. The generic disposable-database integration command was skipped because it requires broader database creation and deletion rights.
+
+## Original repository inspection
 
 F1 is implemented. `src/core/storage.ts` saves City JSON v1 in `cleancity.scenarios.v1`; operating results are tab-local. `server/local` is serial/SQLite, not the municipal database backend. No server environment file or Atlas URI is configured in this checkout. Preserve these contracts and the receiver.
 
@@ -33,6 +41,6 @@ Actual Atlas acceptance requires a dedicated development database URI in an igno
 - Actual ChatGPT in-app browser also signed in to that isolated TEST API and inspected the stored simulated run: four completed, zero pending, 6.13 modeled km, 36.4 min and INR 171.07. Application-only screenshot: ignored `build/f2-e2e/chatgpt-TEST-history.png`. Other evidence: `f2-TEST-library-migration.png`, `f2-TEST-saved-result.png`, `f2-TEST-mobile.png`, and `results.json` in that directory. Generated screenshots/backups are not source files.
 - Dependency install exposed prior Vite/Vitest advisories. Audit-recommended updates stayed within Vite 7/Vitest 4; installation reported **zero vulnerabilities** afterward. No forced major update was used.
 
-## Remaining before F2 can be accepted
+## Original acceptance plan
 
 Configure dedicated development Atlas access using [the exact setup guide](f2-local-setup.md), then run the real-driver test and authenticated browser/database restart, conflict, migration/history and outage/recovery checks. Any genuine adapter/integration failures must be fixed before marking F2 complete. Production readiness/security/performance refinement belongs to F3; physical acceptance belongs to F4. No F3/F4 execution, cloud provisioning, deployment, commit or push was performed. Changes remain reviewable in the working tree; the pre-existing root PNG is retained.

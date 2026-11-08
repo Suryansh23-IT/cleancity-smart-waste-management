@@ -6,9 +6,12 @@ export function parseLine(line:string):Observation|null{
  if(!m)return null;const index=Number(m[1])-1;if(Number(m[2])!==pins[index][0]||Number(m[3])!==pins[index][1])return null;
  const pulse=Number(m[5]),distance=m[7]?Number(m[7]):null;
  if(!Number.isSafeInteger(pulse)||pulse>30000)return null;
+ return diagnosticObservation(index, pulse, distance, m[4]==='HIGH', m[6]==='HIGH');
+}
+export function diagnosticObservation(index:number,pulse:number,distance:number|null,beforeHigh:boolean,afterHigh:boolean):Observation {
  const base={id:`BIN-00${index+1}`,pulseUs:pulse};
- if(m[8]&&pulse===0)return {...base,status:'NO_ECHO',distanceCm:null,reason:'No echo pulse'};
- if(!m[8]&&pulse>0&&distance!==null&&distance>=2&&distance<=400&&Math.abs(distance-pulse*.0343/2)<.03&&m[4]==='LOW'&&m[6]==='LOW')return {...base,status:'VALID',distanceCm:distance,reason:null};
+ if(distance===null&&pulse===0)return {...base,status:'NO_ECHO',distanceCm:null,reason:'No echo pulse'};
+ if(pulse>0&&distance!==null&&distance>=2&&distance<=400&&Math.abs(distance-pulse*.0343/2)<.03&&!beforeHigh&&!afterHigh)return {...base,status:'VALID',distanceCm:distance,reason:null};
  return {...base,status:'INVALID',distanceCm:null,reason:'Inconsistent pulse, distance, or Echo state'};
 }
 export class DiagnosticLines{

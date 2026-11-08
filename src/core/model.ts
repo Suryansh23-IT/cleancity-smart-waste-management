@@ -285,6 +285,8 @@ export function validateCity(value: unknown): string[] {
   const snap = c.showcaseSnapshot;
   if (snap) {
     if (snap.version !== 1 || !['TEST','PHYSICAL'].includes(snap.mode) || !Number.isFinite(Date.parse(snap.capturedAt)) ||
+      (snap.origin !== undefined && !['LOCAL_USB','CLOUD_WIFI','CLOUD_TEST'].includes(snap.origin)) ||
+      (snap.origin === 'CLOUD_TEST' && snap.mode !== 'TEST') ||
       !Array.isArray(snap.readings) || snap.readings.length !== 4 || new Set(snap.readings.map(r=>r?.id)).size !== 4 ||
       snap.readings.some(r=>!r || !/^BIN-00[1-4]$/.test(r.id) || r.status !== 'VALID' || r.distanceCm === null || !Number.isFinite(r.distanceCm) || r.fillPercent === null || !Number.isFinite(r.fillPercent) || !Number.isFinite(Date.parse(r.receivedAt??'')) || !r.calibration) ||
       !snap.fills || Object.keys(snap.fills).length !== 10 || Object.entries(snap.fills).some(([id,v])=>!c.bins.some(b=>b.id===id) || !Number.isFinite(v) || v<0 || v>100)) errors.push('Invalid showcase provenance');

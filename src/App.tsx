@@ -61,6 +61,7 @@ import { pathFinder } from "./core/graph";
 import CityCanvas, { Selection } from "./components/CityCanvas";
 import Inspector from "./components/Inspector";
 import PhysicalLab from "./components/PhysicalLab";
+import type { PhysicalTransport } from './core/physical';
 import StudioTools from "./components/StudioTools";
 import { routingGraphChanged, operationalChanged } from "./core/studio";
 import {
@@ -93,6 +94,8 @@ const money = (v: number) =>
   }).format(v);
 const fixed = (n: number) => n.toFixed(2);
 export default function App() {
+  const [physicalTransport, setPhysicalTransport] = useState<PhysicalTransport>(() =>
+    ['localhost','127.0.0.1','[::1]'].includes(location.hostname) ? 'usb' : 'wifi');
   const [databaseSelection,setDatabaseSelection]=useState<StoredCity|null>(null);
   const [initial] = useState(() => {
     try {
@@ -1007,12 +1010,12 @@ export default function App() {
           {!physical && city.showcase && <p role="status">{city.showcaseSnapshot?.mode==='TEST'?'TEST FIXTURE':city.showcaseSnapshot?'PHYSICAL-DERIVED':'UNCAPTURED'} showcase inputs · truck collection is simulated. Manage snapshots in Physical IoT Lab.</p>}
           {physical ? (
             <>
-            <PhysicalLab />
+            <PhysicalLab key={physicalTransport} transport={physicalTransport} onTransport={setPhysicalTransport} onSignIn={()=>navigate('Cities','municipal-database')} />
             <section className="panel iot-showcase-workspace" id="iot-showcase" tabIndex={-1} aria-label="IoT showcase dashboard">
               <h2>10-bin showcase dashboard</h2>
               <p>Prepare a physical-derived or explicitly TEST planning snapshot here, then continue to the existing municipal collection workspaces.</p>
               <button onClick={()=>load(showcaseCity(),false,"Physical IoT Lab")}>Open 10-bin showcase</button>
-              {city.showcase && <ShowcasePanel key={city.id} city={city} locked={!!sim} onCapture={c=>{if(sim||inspectorDraft){notify("Reset the run and apply open form edits first.","error");return false;}const errors=validateCity(c);if(errors.length){notify(errors.join("; "),"error");return false;}setCity(c);setDirty(true);invalidate();return true;}}/>}
+              {city.showcase && <ShowcasePanel key={city.id+physicalTransport} transport={physicalTransport} city={city} locked={!!sim} onCapture={c=>{if(sim||inspectorDraft){notify("Reset the run and apply open form edits first.","error");return false;}const errors=validateCity(c);if(errors.length){notify(errors.join("; "),"error");return false;}setCity(c);setDirty(true);invalidate();return true;}}/>}
 
               {city.showcase && <><button onClick={save}>Save showcase city</button><button onClick={()=>navigate('City Studio')}>Edit showcase map</button><button disabled={!city.showcaseSnapshot} onClick={()=>navigate('Zone & Fleet Operations')}>Continue to Dispatch</button></>}
             </section>

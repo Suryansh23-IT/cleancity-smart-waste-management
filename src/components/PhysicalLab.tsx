@@ -2,8 +2,13 @@ import SerialConnection from './SerialConnection';
 import { useEffect, useRef, useState } from "react";
 import { Radio, RefreshCw, AlertTriangle } from "lucide-react";
 import { status } from "../core/model";
-import { PhysicalBin, parsePhysical, staleReading } from "../core/physical";
-export default function PhysicalLab() {
+import { PhysicalBin, parsePhysical, staleReading, physicalEndpoint, cloudReadingAge, cloudStaleMs, type PhysicalTransport } from "../core/physical";
+export default function PhysicalLab({transport, onTransport, onSignIn}: {
+  transport: PhysicalTransport; onTransport: (value: PhysicalTransport) => void; onSignIn: () => void;
+}) {
+  const wifi = transport === 'wifi';
+  const usbAvailable = ['localhost','127.0.0.1','[::1]'].includes(location.hostname);
+  const [fixture, setFixture] = useState(false);
   const [bins, setBins] = useState<PhysicalBin[]>([]),
     [loading, setLoading] = useState(false),
     [error, setError] = useState(""),
@@ -17,14 +22,15 @@ export default function PhysicalLab() {
     const version = ++requestVersion.current;
     setLoading(true);
     try {
-      const response = await fetch("/api/physical", {
+      if (!wifi && !usbAvailable) throw Error('Open the local CleanCity app to use the USB receiver.');
+      const response = await fetch(physicalEndpoint(transport), {
         signal: signal
           ? AbortSignal.any([signal, AbortSignal.timeout(10000)])
           : AbortSignal.timeout(10000),
         cache: "no-store",
       });
       if (!response.ok)
-        throw Error(
+        throw Error(wifi && response.status === 401 ? 'Sign in under Cities → Municipal database to view Wi-Fi readings.' :
           response.status === 503
             ? "Telemetry receiver is not configured or unavailable. No verified telemetry is available."
             : `Physical API unavailable (${response.status}). No verified data.`,
@@ -40,7 +46,9 @@ export default function PhysicalLab() {
         );
       const data = await response.json();
       if (signal?.aborted || version !== requestVersion.current) return;
+      if (wifi && !['CLOUD_WIFI','CLOUD_TEST'].includes(data.origin)) throw Error('Expected authenticated Wi-Fi telemetry.');
       setBins(parsePhysical(data));
+      setFixture(data.origin === 'CLOUD_TEST');
       setLocal(data.origin==="LOCAL_USB");setReceiver(data.receiver??null);
       setError("");
       setChecked(new Date().toISOString());
@@ -58,15 +66,14 @@ export default function PhysicalLab() {
   useEffect(() => {
     const controller = new AbortController();
     refresh(controller.signal);
-    const interval = setInterval(() => {
-      setNow(Date.now());
-      refresh(controller.signal);
-    }, 1000);
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    const interval = setInterval(() => refresh(controller.signal), wifi ? 10000 : 1000);
     return () => {
       controller.abort();
       requestVersion.current++;
       inFlight.current = false;
       clearInterval(interval);
+      clearInterval(tick);
     };
   }, []);
   return (
@@ -77,13 +84,17 @@ export default function PhysicalLab() {
           <span className="eyebrow">PHYSICAL IOT LAB</span>
           <h3>Real devices. Real observations.</h3>
           <p>Four physical channels · separate from simulated collection</p>
-          <small>Readings come from the local USB receiver and its saved history.</small>
+          <small>{wifi ? 'Readings and history come from the authenticated Atlas telemetry API.' : 'Readings come from the local USB receiver and its saved history.'}</small>
+          <label>Reading source <select value={transport} onChange={e => onTransport(e.target.value as PhysicalTransport)}>
+            <option value="usb">USB · local receiver</option>
+            <option value="wifi">Wi-Fi · cloud telemetry</option>
+          </select></label>
         </div>
         <span className="pill">
           {error
             ? "NO VERIFIED DATA"
             : bins.length
-              ? local ? "LOCAL PHYSICAL" : "PHYSICAL TELEMETRY"
+              ? wifi ? fixture ? "WI-FI · TEST FIXTURE" : "WI-FI · CLOUD" : local ? "LOCAL PHYSICAL" : "PHYSICAL TELEMETRY"
               : loading ? "CHECKING RECEIVER" : "NO VERIFIED DATA"}
         </span>
         <button disabled={loading} onClick={() => refresh()}>
@@ -92,14 +103,19 @@ export default function PhysicalLab() {
         </button>
         <a className="workspace-jump" href="#iot-showcase">Go to 10-bin showcase ↓</a>
       </section>
-      <div className="lab-connection-grid">
+      {wifi && <section className="panel" aria-label="Cloud connection status">
+        <b>{fixture ? 'Wi-Fi · TEST fixture feed' : 'Wi-Fi telemetry'}</b>
+        <p>{error ? 'Cloud feed unavailable' : bins.length === 0 ? 'Offline · waiting for the first batch' : cloudReadingAge(bins[0], now) > 120000 ? 'Offline · no recent sample' : cloudReadingAge(bins[0], now) > cloudStaleMs ? 'Stale · waiting for a fresh batch' : 'Receiving authenticated batches'}</p>
+        <button onClick={onSignIn}>Open municipal database sign-in</button>
+      </section>}
+      {!wifi && usbAvailable && <div className="lab-connection-grid">
       <SerialConnection onChange={()=>{void refresh();}}/>
       <section className="panel" aria-label="Automatic USB connection status" role="status">
         <b>Automatic USB monitoring</b>
         <p>{error ? 'Local receiver unavailable — USB cannot be read directly by this website.' : local ? `Receiver: ${receiver?.connected?'PORT OPEN':'DISCONNECTED'} · ${receiver?.port??'No port selected'} · Fresh valid channels: ${receiver?.connected?bins.filter(b=>b.status==='VALID'&&b.receivedAt&&now-Date.parse(b.receivedAt)<=10000&&Date.parse(b.receivedAt)<=now+5000).length:0}/4` : checked ? 'Local USB receiver status is unavailable from this source.' : 'Checking telemetry receiver…'}</p>
         <small>Updates automatically every second while this Lab is open. The local receiver must be running with your explicitly selected COM port; it retries that same port after a USB reconnect. Fresh distance readings do not prove calibration or electrical safety.</small>
       </section>
-      </div>
+      </div>}
       {error && (
         <div className="warning-list" role="alert">
           <AlertTriangle size={18} /> {error} Last successfully fetched
@@ -111,7 +127,7 @@ export default function PhysicalLab() {
         {[1, 2, 3, 4].map((i) => {
           const id = `BIN-${String(i).padStart(3, "0")}`,
             b = bins.find((b) => b.id === id),
-            stale = !!error || (local ? !receiver?.connected || !b?.receivedAt || now-Date.parse(b.receivedAt)>10000 || Date.parse(b.receivedAt)>now+5000 : staleReading(b?.receivedAt ?? null, now)),
+            stale = !!error || (wifi ? cloudReadingAge(b, now) > cloudStaleMs : local ? !receiver?.connected || !b?.receivedAt || now-Date.parse(b.receivedAt)>10000 || Date.parse(b.receivedAt)>now+5000 : staleReading(b?.receivedAt ?? null, now)),
             s = status(b?.fillPercent ?? null, undefined, stale),
             color =
               s === "URGENT"
@@ -154,7 +170,7 @@ export default function PhysicalLab() {
                     : "Never"}
                 </dd>
                 <dt>Source</dt>
-                <dd>{local?"LOCAL PHYSICAL":"PHYSICAL"}</dd>
+                <dd>{wifi ? fixture ? 'WI-FI · TEST' : 'WI-FI · CLOUD' : local ? 'LOCAL PHYSICAL' : 'PHYSICAL'}</dd>
                 <dt>Device</dt>
                 <dd>{b?.deviceId ?? "Not configured"}</dd>
                 <dt>Reading age</dt><dd>{b?.receivedAt ? `${Math.max(0,Math.round((now-Date.parse(b.receivedAt))/1000))} seconds` : 'Unknown'}</dd>
@@ -197,7 +213,7 @@ export default function PhysicalLab() {
             (b) =>
               b.fillPercent === null ||
               b.fillPercent >= 80 ||
-              staleReading(b.receivedAt, now),
+            (wifi ? cloudReadingAge(b, now) > cloudStaleMs : staleReading(b.receivedAt, now)),
           )
           .map((b) => (
             <p key={b.id}>
@@ -205,7 +221,7 @@ export default function PhysicalLab() {
               {status(
                 b.fillPercent,
                 undefined,
-                !!error || staleReading(b.receivedAt, now),
+                !!error || (wifi ? cloudReadingAge(b, now) > cloudStaleMs : staleReading(b.receivedAt, now)),
               )}
             </p>
           ))}
@@ -216,9 +232,7 @@ export default function PhysicalLab() {
           </p>
         )}
         <p className="small">
-          Last successful API check: {checked ?? "None"} · Poll interval 1
-          seconds · Local stale threshold 10 seconds; legacy threshold 90 seconds. Server receipt timestamps are
-          authoritative.
+          Last successful API check: {checked ?? "None"} · {wifi ? 'Poll interval 10 seconds · stale after 45 seconds · offline after 2 minutes.' : 'Poll interval 1 second · local stale threshold 10 seconds.'}
         </p>
       </section>
       <section className="panel"><h3>Physical evidence</h3><p>The four-channel local pipeline was demonstrated previously. Final mounted-bin calibration, electrical checks and repeatability remain separate acceptance tasks. Preserve the tested firmware and wiring; never apply 5V Echo directly to ESP32 GPIO.</p></section>
