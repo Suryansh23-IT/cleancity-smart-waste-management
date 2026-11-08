@@ -1,5 +1,5 @@
-import { City, clone } from "./model";
-import { Plan, Phase, Trip, truckZoneAssignments } from "./routing";
+import { City, clone } from "./model.js";
+import { Plan, Phase, Trip, truckZoneAssignments } from "./routing.js";
 export interface Event {
   time: number;
   message: string;

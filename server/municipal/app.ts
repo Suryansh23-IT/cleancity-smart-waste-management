@@ -1,12 +1,12 @@
 import express from 'express';
 import type {Request,Response,NextFunction} from 'express';
 import {randomUUID} from 'node:crypto';
-import {parseCity} from '../../src/core/model';
+import {parseCity} from '../../src/core/model.js';
 import type {ArchiveRecord,CityRecord,MunicipalStore,SessionRecord} from './store';
-import {hashToken,token,validHash,verifyPassword} from './auth';
-import {planCollection} from '../../src/core/routing';
-import {startSimulation,advance} from '../../src/core/simulation';
-import {authorizeDevice,buildBatch,cloudSnapshot,type TelemetryConfig} from './cloudTelemetry';
+import {hashToken,token,validHash,verifyPassword} from './auth.js';
+import {planCollection} from '../../src/core/routing.js';
+import {startSimulation,advance} from '../../src/core/simulation.js';
+import {authorizeDevice,buildBatch,cloudSnapshot,type TelemetryConfig} from './cloudTelemetry.js';
 
 export const ENGINE_VERSION='f3-terminal-boundary-v2';
 export function canonical(value:unknown):string {return JSON.stringify(value,(_k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);}

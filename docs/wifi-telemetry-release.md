@@ -11,6 +11,11 @@ Local operation uses the existing ESP32 serial diagnostics, Node receiver and SQ
 5. Apply a Vercel Firewall rate rule to `POST /api/session` and a separate rule to `POST /api/telemetry/ingest` before public launch. Begin with 8 login attempts per 15 minutes per client IP and 30 ingest attempts per minute per client IP, then test the configured policy. Return 429 and verify that normal device traffic succeeds. The app enforces an 8 KiB device body limit and Atlas enforces one stored batch per device per five-second window across instances. The app's in-process login limiter is an additional local control. [Vercel Firewall rules](https://vercel.com/docs/vercel-firewall/vercel-waf/custom-rules)
 6. On the preview, verify deep API routing, secure cookies, Origin/CSRF rejection, invalid device credentials, valid device ingestion, retries and storage restart, and the operator-only snapshot endpoint. Check real browser workflows, the target browser and phone, and the Vercel request/response ceiling with representative large cities. Verify runtime logs and alerts for 5xx, Atlas connectivity and throttling. Log request IDs and status, and keep authorization headers, payloads and database URLs out of logs. Record the tested commit and previous deployment before production and verify rollback and database recovery. [Vercel runtime limits](https://vercel.com/docs/functions/limitations)
 
+## Vercel Preview verification
+
+- The protected Preview built successfully and displayed the Dashboard and Physical IoT Lab. The hosted municipal handler uses explicit `.js` paths for runtime imports so Node can resolve the emitted modules.
+- `/api/health` reached the handler and returned the expected `503 CONFIGURATION` response before hosted environment variables were provisioned. Atlas connectivity, hosted operator sign-in and Wi-Fi ingestion remain separate acceptance checks.
+
 ## Firmware and physical acceptance
 
 1. Raj and Suryakant dry-fit the approved board, mounts and labels. Vishal verifies the exact board, power path and Echo protection with power disconnected, then confirms the circuit with a meter or technician before energizing. Follow the one → two → four sensor gates. Keep 5 V Echo off ESP32 GPIO.

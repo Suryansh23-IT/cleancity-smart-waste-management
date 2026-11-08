@@ -1,7 +1,7 @@
-import { hashToken } from './auth';
-import { diagnosticObservation } from '../local/parser';
-import { fillFromDistance, tokenMatches } from '../telemetry';
-import { physicalChannels, cloudStaleMs } from '../../src/core/physical';
+import { hashToken } from './auth.js';
+import { diagnosticObservation } from '../local/parser.js';
+import { fillFromDistance, tokenMatches } from '../telemetry.js';
+import { physicalChannels, cloudStaleMs } from '../../src/core/physical.js';
 import type { PhysicalBin } from '../../src/core/physical';
 
 type Calibration = NonNullable<PhysicalBin['calibration']>;

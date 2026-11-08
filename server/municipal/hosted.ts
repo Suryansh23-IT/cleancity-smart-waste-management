@@ -1,7 +1,7 @@
 import type {IncomingMessage,ServerResponse} from 'node:http';
-import {createMunicipalApp} from './app';
-import {mongoStore} from './store';
-import {telemetryConfig} from './cloudTelemetry';
+import {createMunicipalApp} from './app.js';
+import {mongoStore} from './store.js';
+import {telemetryConfig} from './cloudTelemetry.js';
 
 // Lazy initialization keeps missing/invalid production configuration fail-closed.
 // No listener, serial port, SQLite or test repository is loaded by this adapter.

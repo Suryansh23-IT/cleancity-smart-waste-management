@@ -1,5 +1,5 @@
-import { City, Truck } from "./model";
-import { pathFinder } from "./graph";
+import { City, Truck } from "./model.js";
+import { pathFinder } from "./graph.js";
 export type Phase =
   | "DISPATCHED"
   | "TRAVELLING"
