@@ -1,0 +1,15 @@
+const fs = require('node:fs');
+const tls = require('node:tls');
+const { X509Certificate } = require('node:crypto');
+const source = 'firmware/hc_sr04_test/secrets.h';
+const output = '.local/hosted-firmware/secrets.h';
+if (fs.existsSync(output)) throw Error('Hosted configuration already exists; preserve it');
+const root = tls.rootCertificates.find(pem => new X509Certificate(pem).subject.includes('CN=GTS Root R4'));
+if (!root) throw Error('GTS Root R4 is unavailable in the local trusted store');
+let data = fs.readFileSync(source, 'utf8');
+if (!/^#define CLOUD_INGEST_URL\s+"[^"]+"/m.test(data) || !/static const char CLOUD_ROOT_CA\[\]\s*=\s*R"PEM\([\s\S]*?\)PEM";/m.test(data)) throw Error('Unexpected firmware configuration; no files changed');
+data = data.replace(/^#define CLOUD_INGEST_URL\s+"[^"]+"/m, '#define CLOUD_INGEST_URL "https://cleancity-preview-api.onrender.com/api/telemetry/ingest"');
+data = data.replace(/static const char CLOUD_ROOT_CA\[\]\s*=\s*R"PEM\([\s\S]*?\)PEM";/m, `static const char CLOUD_ROOT_CA[] = R"PEM(\n${root}\n)PEM";`);
+fs.mkdirSync('.local/hosted-firmware', { recursive: true });
+fs.writeFileSync(output, data, {flag:'wx'});
+console.log('Prepared separate ignored hosted configuration with GTS Root R4; original firmware configuration unchanged. Device credentials still require matching Render configuration.');
