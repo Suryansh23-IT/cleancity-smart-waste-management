@@ -112,6 +112,9 @@ export function RunProgress({
         </table>
       </div>
       <p className="small">
+        Load is measured in modeled bin units: a bin contributes its capacity multiplied by its fill percentage. The truck unloads at its depot after a trip.
+      </p>
+      <p className="small">
         Utilization = scheduled vehicle minutes / fleet completion time, per
         truck. Distance accumulates only on travelled road segments. A completed
         pickup requires its service interval to finish; pending bins remain
