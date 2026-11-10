@@ -80,18 +80,23 @@ export default function PhysicalLab({transport, onTransport, onSignIn, onDemo}: 
     }
   }
   useEffect(() => {
+    if (demoMode) return;
     const controller = new AbortController();
-    refresh(controller.signal);
-    const tick = setInterval(() => setNow(Date.now()), 1000);
-    const interval = setInterval(() => refresh(controller.signal), wifi ? 5000 : 1000);
+    const visible = () => document.visibilityState === 'visible';
+    const onVisibility = () => { if (visible()) { setNow(Date.now()); void refresh(controller.signal); } };
+    if (visible()) void refresh(controller.signal);
+    document.addEventListener('visibilitychange', onVisibility);
+    const tick = setInterval(() => { if (visible()) setNow(Date.now()); }, 1000);
+    const interval = setInterval(() => { if (visible()) void refresh(controller.signal); }, wifi ? 5000 : 1000);
     return () => {
       controller.abort();
       requestVersion.current++;
       inFlight.current = false;
+      document.removeEventListener('visibilitychange', onVisibility);
       clearInterval(interval);
       clearInterval(tick);
     };
-  }, []);
+  }, [demoMode]);
   if(demoMode) return <>
     <section className="physical-banner"><div><span className="eyebrow">DEMO · SIMULATED</span><h3>Sensor-free demo simulator</h3><p>Virtual values only. No physical telemetry is written.</p></div><button onClick={()=>setDemoMode(false)}>Return to live readings</button></section>
     <div className="physical-grid">{demoFills.map((fill,i)=>{const id=`BIN-00${i+1}`, t=thresholds[id]??thresholdDefaults, urgency=status(fill,{...defaults,pickupThreshold:t.pickup,urgentThreshold:t.urgent},false);return <section className="panel bin-gauge" key={id}><b>{id} · DEMO</b><p style={{color:urgency==='URGENT'?'#b83131':urgency==='COLLECTION_NEEDED'?'#a65d00':'#137750'}}>{fill}% · {urgency.replace('_',' ')}</p><label>Simulated fill <input type="range" min="0" max="100" value={fill} aria-label={`${id} simulated fill`} onChange={e=>setDemoFills(current=>current.map((v,n)=>n===i?Number(e.target.value):v))}/></label></section>})}</div>
