@@ -16,6 +16,8 @@
     "iot:ports": "node server/local/main.ts --list",
     "wifi:gateway": "node --env-file=.env server/municipal/local-wifi-gateway.mjs",
     "api:dev": "tsx --env-file=.env server/municipal/main.ts",
+    "api:render:build": "esbuild server/municipal/render.ts --bundle --platform=node --format=esm --packages=external --outfile=build/render/server.mjs",
+    "api:render:start": "node build/render/server.mjs",
     "auth:hash": "tsx scripts/hash-operator-password.ts",
     "test:atlas": "node --env-file=.env node_modules/vitest/vitest.mjs run server/municipal/atlas.integration.test.ts --maxWorkers=1"
   },
