@@ -117,3 +117,7 @@ The showcase has more graph nodes than the 50-bin preset. The short post-GC samp
 - Physical power: user reported the ESP32 connected to its verified USB charger with laptop USB disconnected. USB receiver reported disconnected and previous COM8 was absent; no power wiring was inspected remotely.
 - Wi-Fi/Atlas: after the user confirmed charger power, three new non-TEST device batches arrived at 10:58:25, 10:58:35 and 10:58:45 UTC, each containing VALID BIN-001 through BIN-004; sampled timestamps advanced. Authenticated Lab showed Wi-Fi source, 4/4 fresh channels and an advancing 10:58:45 UTC receipt.
 - Scope: charger-only Wi-Fi delivery passed this observation; assumed calibration values, mounted-bin accuracy/repeatability, longer-duration stability and Wi-Fi outage/reconnect remain separate acceptance gates.
+
+## Measured empty distance update (2026-11-10)
+- User reports 24.5 cm physical bin height and sensor mounted approximately 1.5 cm inside; measured sensor-to-empty-bottom distance 23 cm. Local USB and Wi-Fi settings updated per channel to 23 cm empty and 21 cm usable range. The 2 cm near-full distance is provisional, not a measured full calibration. Fresh mounted repeatability and final acceptance remain pending.
+- Do not treat 23 cm sensor distance as full; it is the empty (0%) reference.

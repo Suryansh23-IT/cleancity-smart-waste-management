@@ -59,6 +59,9 @@ describe("physical boundary", () => {
     ).toBe(null);
   });
   it("calibrates, clamps, and leaves invalid measurements unknown", () => {
+    expect(fillFromDistance(23, 23, 2)).toBe(0);
+    expect(fillFromDistance(12.5, 23, 2)).toBe(50);
+    expect(fillFromDistance(2, 23, 2)).toBe(100);
     expect(fillFromDistance(20, 20, 4)).toBe(0);
     expect(fillFromDistance(4, 20, 4)).toBe(100);
     expect(fillFromDistance(12, 20, 4)).toBe(50);
