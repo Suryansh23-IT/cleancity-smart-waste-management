@@ -121,3 +121,20 @@ The showcase has more graph nodes than the 50-bin preset. The short post-GC samp
 ## Measured empty distance update (2026-11-10)
 - User reports 24.5 cm physical bin height and sensor mounted approximately 1.5 cm inside; measured sensor-to-empty-bottom distance 23 cm. Local USB and Wi-Fi settings updated per channel to 23 cm empty and 21 cm usable range. The 2 cm near-full distance is provisional, not a measured full calibration. Fresh mounted repeatability and final acceptance remain pending.
 - Do not treat 23 cm sensor distance as full; it is the empty (0%) reference.
+# Physical Lab follow-up — 2026-11-10
+
+- Software: per-bin Wi-Fi calibration and a sensor-free TEST snapshot handoff have been implemented locally. Authentication and CSRF are covered by fixture tests; Atlas persistence and hosted operation still require end-to-end verification.
+- Browser: a TEST-labelled four-bin demo snapshot was handed to the existing ten-bin collection simulator; this is simulated evidence only.
+- Cloud: the existing Vercel project has no configured environment variables. Hosted Atlas connectivity, hosted device ingestion and public operator rate limiting remain unverified; the existing login attempt counter is process-local and cannot establish a durable serverless rate limit.
+- Physical: no new hardware operation or hosted device test was performed. The 2 cm near-full threshold remains provisional.
+- Follow-up verification: full suite 184 passed / 1 skipped; isolated TEST workspace in the development Atlas database saved and reopened four independent calibrations and verified recalculated snapshots. TEST records were removed by workspace identity. The browser showed a TEST-labelled simulated collection completed and then returned to real local Wi-Fi readings. These do not establish hosted acceptance.
+- Hosted follow-up: a MongoDB-backed fixed-window login limiter now shares eight attempts per workspace per 15-minute window across API instances and fails closed if MongoDB is unavailable. This account-wide limit can be exhausted by an unauthenticated caller; hosted WAF protections and a distributed integration test remain necessary. Local two-instance fixture tests passed. Security diff review and hosted acceptance remain incomplete.
+- Subsequent development Atlas TEST: two independent MongoDB store instances shared the login limit correctly; fixture records were removed. This does not verify the deployed Render revision, whose environment remains unconfigured.
+- Render Preview preparation: a cluster-scoped Preview user with read/write access only to the Preview database was created. Preview database, operator and TEST-device settings were saved to the existing Free service without deployment; real hosted login and ingestion remain disabled until the security-reviewed backend is deployed. No physical evidence is implied.
+
+## Preview execution check (2026-11-11)
+- Software: focused authentication, telemetry and UI tests passed (35); TypeScript, Vite build and Render bundle build passed. The shared login limit permits an unauthenticated caller to exhaust the workspace allowance; hosted mitigation remains unverified. The frontend currently lacks a Render API proxy.
+- Cloud: Render `/api/ready` returned 503 CONFIGURATION. Existing Vercel project and Hobby team were identified; no deployment or Atlas connectivity was verified in this check.
+- Browser: no hosted end-to-end acceptance was performed. Physical: no hardware was accessed; prior real readings are not hosted acceptance evidence.
+- Resume: access the existing Render dashboard, review saved configuration and hosted rate-limit mitigation, then deploy only the reviewed preview revision and verify readiness before connecting the Vercel preview.
+- Subsequent software preparation: login limits now use a hashed forwarded peer address rather than a workspace-wide bucket; two-instance fixture tests passed. The external API rewrite is prepared. Render/Vercel forwarded-address behavior and deployed security remain unverified, including possible shared proxy addresses. No hosted or physical acceptance is implied.

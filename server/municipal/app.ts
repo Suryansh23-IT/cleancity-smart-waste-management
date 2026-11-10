@@ -7,6 +7,9 @@ import {hashToken,token,validHash,verifyPassword} from './auth.js';
 import {planCollection} from '../../src/core/routing.js';
 import {startSimulation,advance} from '../../src/core/simulation.js';
 import {authorizeDevice,buildBatch,cloudSnapshot,type TelemetryConfig} from './cloudTelemetry.js';
+import {fillFromDistance} from '../telemetry.js';
+import {physicalChannels} from '../../src/core/physical.js';
+import {isIP} from 'node:net';
 
 export const ENGINE_VERSION='f3-terminal-boundary-v2';
 export function canonical(value:unknown):string {return JSON.stringify(value,(_k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);}
@@ -45,9 +48,9 @@ export function createMunicipalApp(store:MunicipalStore,config:ApiConfig){
  const cookie=(req:Request)=>{const raw=(req.headers.cookie??'').split(';').map(s=>s.trim()).find(s=>s.startsWith('cleancity_session='))?.slice(18);return raw&&/^[a-f0-9]{64}$/.test(raw)?raw:null;};
  const options={httpOnly:true,secure:config.secureCookies,sameSite:'strict' as const,path:'/api',maxAge:8*60*60*1000};
  app.post('/api/session',async(req,res)=>{
-  const now=Date.now();for(const [key,a]of attempts)if(a.expires<=now)attempts.delete(key);
-  const key=req.socket.remoteAddress??'unknown';const a=attempts.get(key)??{count:0,expires:now+15*60000};
-  if(a.count>=8||attempts.size>=10000)fail(429,'RATE_LIMIT','Too many login attempts; try later');a.count++;attempts.set(key,a);
+  const now=Date.now();let key='';
+  if(store.loginAttempt){const forwarded=req.headers['x-forwarded-for'];const address=(config.secureCookies&&typeof forwarded==='string'?forwarded.split(',').at(-1)?.trim():req.socket.remoteAddress)??'';if(!isIP(address))fail(503,'RATE_LIMIT_UNAVAILABLE','Login protection unavailable');if(!await store.loginAttempt(config.workspaceId,now,hashToken(address)))fail(429,'RATE_LIMIT','Too many login attempts; try later');}
+  else {if(config.secureCookies)fail(503,'RATE_LIMIT_UNAVAILABLE','Login protection unavailable');for(const [k,a]of attempts)if(a.expires<=now)attempts.delete(k);key=req.socket.remoteAddress??'unknown';const a=attempts.get(key)??{count:0,expires:now+15*60000};if(a.count>=8||attempts.size>=10000)fail(429,'RATE_LIMIT','Too many login attempts; try later');a.count++;attempts.set(key,a);}
   if(req.body?.username!==config.username||!await verifyPassword(req.body?.password,config.passwordHash))fail(401,'AUTH','Invalid operator credentials');
   const prior=cookie(req);if(prior)await store.deleteSession(hashToken(prior));
   const raw=token(),s={_id:hashToken(raw),workspaceId:config.workspaceId,csrf:token(),expiresAt:new Date(now+options.maxAge)};
@@ -65,7 +68,18 @@ export function createMunicipalApp(store:MunicipalStore,config:ApiConfig){
  app.get('/api/telemetry/snapshot', async (req,res) => {
   const telemetry = config.telemetry;
   if (!telemetry || !store.telemetry) return fail(503,'TELEMETRY_DISABLED','Wi-Fi telemetry is unavailable');
-  res.json(cloudSnapshot(await store.telemetry.recent(workspace(req),telemetry.deviceId,telemetry.test),telemetry));
+  const saved = await store.telemetry.getCalibrations?.(workspace(req),telemetry.deviceId) ?? {};
+  res.json(cloudSnapshot(await store.telemetry.recent(workspace(req),telemetry.deviceId,telemetry.test),{...telemetry,calibration:{...telemetry.calibration,...saved}}));
+ });
+ app.put('/api/telemetry/calibration/:binId',async(req,res)=>{
+  const telemetry=config.telemetry, binId=req.params.binId;
+  if(!telemetry||!store.telemetry?.setCalibration)return fail(503,'TELEMETRY_DISABLED','Wi-Fi calibration is unavailable');
+  if(typeof binId!=='string'||!physicalChannels.some(id=>id===binId))return fail(400,'CALIBRATION','Invalid sensor');
+  const {emptyDistanceCm,usableDepthCm}=req.body??{};
+  if(typeof emptyDistanceCm!=='number'||typeof usableDepthCm!=='number'||!Number.isFinite(emptyDistanceCm)||!Number.isFinite(usableDepthCm)||usableDepthCm<=0)return fail(422,'CALIBRATION','Enter valid measured distances');
+  try{fillFromDistance(2,emptyDistanceCm,emptyDistanceCm-usableDepthCm);}catch{return fail(422,'CALIBRATION','Empty distance must exceed full distance; full must be at least 2 cm and empty at most 400 cm');}
+  await store.telemetry.setCalibration(workspace(req),telemetry.deviceId,binId,{emptyDistanceCm,usableDepthCm});
+  res.json({data:{binId,emptyDistanceCm,usableDepthCm}});
  });
  const id=(req:Request)=>{const v=req.params.id;if(typeof v!=='string'||!/^[-a-zA-Z0-9]{1,160}$/.test(v))fail(400,'ID','Invalid database city identity');return v as string;};
  const revision=(req:Request)=>{const raw=req.headers['if-match'];if(!raw)fail(428,'REVISION','Read the city revision before changing it');if(typeof raw!=='string'||!/^"[1-9]\d{0,8}"$/.test(raw))fail(400,'REVISION','Invalid revision');return Number(String(raw).slice(1,-1));};

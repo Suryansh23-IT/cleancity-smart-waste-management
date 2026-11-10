@@ -90,20 +90,20 @@ describe("municipal UI integration (DOM, not graphical browser)", () => {
     expect(cards[1].textContent).toContain('70% orange / 90% red');
     expect(JSON.parse(localStorage.getItem('cleancity.lab.binThresholds')!)).toEqual({'BIN-001':{pickup:60,urgent:90}});
   });
-  it('shows individual fill depth and sensor offset and saves their sum as empty distance', async () => {
+  it('saves individual measured empty and full distances as local calibration', async () => {
     const at=new Date().toISOString();
     const bins=[1,2,3,4].map(i=>({id:`BIN-00${i}`,label:`Sensor ${i}`,deviceId:'fixture',distanceCm:14.5,fillPercent:50,receivedAt:at,status:'VALID',calibration:{emptyDistanceCm:27,usableDepthCm:25},history:[]}));
     const fetcher=vi.fn().mockImplementation((_url, options)=>options?.method==='PUT' ? Promise.resolve({ok:true,json:async()=>({})}) : Promise.resolve({ok:true,headers:new Headers({'content-type':'application/json'}),json:async()=>({source:'PHYSICAL',origin:'LOCAL_USB',staleAfterMs:10000,receiver:{connected:true,error:null},bins})}));
     vi.stubGlobal('fetch',fetcher); await mount(); await click('Physical IoT Lab');
-    expect((container.querySelector('[aria-label="BIN-001 dustbin height"]') as HTMLInputElement).value).toBe('25');
+    expect((container.querySelector('[aria-label="BIN-001 empty distance"]') as HTMLInputElement).value).toBe('27');
     expect((container.querySelector('[aria-label="BIN-001 sensor offset"]') as HTMLInputElement).value).toBe('2');
     expect(container.querySelectorAll('[aria-label$="individual calibration"]')).toHaveLength(4);
-    await value(container.querySelector('[aria-label="BIN-001 dustbin height"]')!, '20');
+    await value(container.querySelector('[aria-label="BIN-001 empty distance"]')!, '22');
     await click('Save BIN-001 calibration');
     const put=fetcher.mock.calls.find((call:any[])=>call[1]?.method==='PUT');
     expect(put?.[0]).toBe('/api/physical/calibration/BIN-001');
     expect(JSON.parse(put?.[1].body)).toEqual({emptyDistanceCm:22,usableDepthCm:20});
-    expect((container.querySelector('[aria-label="BIN-002 dustbin height"]') as HTMLInputElement).value).toBe('25');
+    expect((container.querySelector('[aria-label="BIN-002 empty distance"]') as HTMLInputElement).value).toBe('27');
   });
   it('shows valid uncalibrated local distance, distance history and calibration controls',async()=>{
     const at=new Date().toISOString();

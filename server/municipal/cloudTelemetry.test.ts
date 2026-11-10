@@ -42,7 +42,10 @@ it('separates device ingestion from operator reads and handles retry, rate limit
   const origin = 'http://127.0.0.1:5182', password = 'fixture-operator-password';
   const store = new TestStore();
   const rows = new Map<string, TelemetryBatch>();
+  const saved: Record<string,{emptyDistanceCm:number;usableDepthCm:number}> = {};
   const backend = Object.assign(store, {telemetry: {
+    async getCalibrations() { return saved; },
+    async setCalibration(_workspace:string,_device:string,id:string,c:{emptyDistanceCm:number;usableDepthCm:number}) { saved[id]=c; },
     async save(batch: TelemetryBatch) {
       if (!store.available) throw Error('Fixture storage down');
       const prior = rows.get(batch._id);
@@ -83,11 +86,23 @@ it('separates device ingestion from operator reads and handles retry, rate limit
     const login = await fetch(base+'/session',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({username:'operator',password})});
     expect(login.status).toBe(200);
     const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const csrf = (await login.json()).data.csrf;
+    const calibrate = (id:string, body:unknown, headers:Record<string,string>={}) => fetch(base+'/telemetry/calibration/'+id,{method:'PUT',headers:{Origin:origin,'Content-Type':'application/json',...headers},body:JSON.stringify(body)});
+    expect((await calibrate('BIN-001',{emptyDistanceCm:23,usableDepthCm:21})).status).toBe(401);
+    expect((await calibrate('BIN-001',{emptyDistanceCm:23,usableDepthCm:21},{Cookie:cookie})).status).toBe(403);
+    const operatorHeaders={Cookie:cookie,'X-CSRF-Token':csrf};
+    expect((await calibrate('BIN-001',{emptyDistanceCm:23,usableDepthCm:22},operatorHeaders)).status).toBe(422);
+    expect((await calibrate('BIN-001',{emptyDistanceCm:23,usableDepthCm:21},operatorHeaders)).status).toBe(200);
+    expect((await calibrate('BIN-002',{emptyDistanceCm:22.5,usableDepthCm:20.5},operatorHeaders)).status).toBe(200);
     const response = await fetch(base+'/telemetry/snapshot',{headers:{Cookie:cookie}});
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
     const snapshot = await response.json();
     expect(snapshot.origin).toBe('CLOUD_TEST');
+    expect(snapshot.bins[0].calibration.emptyDistanceCm).toBe(23);
+    expect(snapshot.bins[1].calibration.emptyDistanceCm).toBe(22.5);
+    expect(snapshot.bins[2].calibration.emptyDistanceCm).toBe(16);
+    expect(snapshot.bins[0].fillPercent).toBeCloseTo((23-snapshot.bins[0].distanceCm)/21*100);
     expect(snapshot.bins.map((row:{history:unknown[]})=>row.history.length)).toEqual([1,1,1,1]);
     expect(rows.size).toBe(1);
   } finally {

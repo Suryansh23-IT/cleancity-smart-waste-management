@@ -14,6 +14,7 @@ coverage/
 *.log
 CleanCity-full-resolution.png
 firmware/
+api/
 **/*.test.ts
 **/*.test.tsx
 server/municipal/testStore.ts

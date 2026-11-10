@@ -4,7 +4,7 @@ import { fillFromDistance, tokenMatches } from '../telemetry.js';
 import { physicalChannels, cloudStaleMs } from '../../src/core/physical.js';
 import type { PhysicalBin } from '../../src/core/physical';
 
-type Calibration = NonNullable<PhysicalBin['calibration']>;
+export type Calibration = NonNullable<PhysicalBin['calibration']>;
 export interface TelemetryConfig {
   deviceId: string;
   tokenHash: string;
@@ -27,6 +27,8 @@ export type WriteResult = 'stored' | 'duplicate' | 'conflict' | 'limited';
 export interface TelemetryStore {
   save(batch: TelemetryBatch): Promise<WriteResult>;
   recent(workspaceId: string, deviceId: string, test: boolean): Promise<TelemetryBatch[]>;
+  getCalibrations?(workspaceId: string, deviceId: string): Promise<Partial<Record<string, Calibration>>>;
+  setCalibration?(workspaceId: string, deviceId: string, binId: string, calibration: Calibration): Promise<void>;
 }
 
 export function telemetryConfig(env: NodeJS.ProcessEnv): TelemetryConfig | undefined {
@@ -95,11 +97,15 @@ export function buildBatch(input: unknown, workspaceId: string, config: Telemetr
 
 export function cloudSnapshot(batches: TelemetryBatch[], config: TelemetryConfig) {
   const latest = batches[0];
+  const calibrated = (bin: PhysicalBin) => {
+    const calibration = config.calibration[bin.id] ?? null;
+    return {...bin, calibration, fillPercent: calibration && bin.status === 'VALID' ? fillFromDistance(bin.distanceCm, calibration.emptyDistanceCm, calibration.emptyDistanceCm - calibration.usableDepthCm) : null};
+  };
   return {
     source: 'PHYSICAL', origin: config.test ? 'CLOUD_TEST' : 'CLOUD_WIFI', staleAfterMs: cloudStaleMs,
     bins: latest ? latest.bins.map(bin => ({
-      ...bin,
-      history: batches.slice().reverse().flatMap(batch => batch.bins.filter(row => row.id === bin.id).map(row => ({
+      ...calibrated(bin),
+      history: batches.slice().reverse().flatMap(batch => batch.bins.filter(row => row.id === bin.id).map(calibrated).map(row => ({
         receivedAt: row.receivedAt, sampledAt: row.sampledAt, fillPercent: row.fillPercent,
         distanceCm: row.distanceCm, status: row.status,
       }))),

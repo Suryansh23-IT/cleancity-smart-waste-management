@@ -9,10 +9,12 @@ const thresholdKey = 'cleancity.lab.binThresholds';
 function validThresholds(value: LabThresholds) {
   return Number.isFinite(value?.pickup) && Number.isFinite(value?.urgent) && value.pickup >= 1 && value.pickup < value.urgent && value.urgent <= 100;
 }
-export default function PhysicalLab({transport, onTransport, onSignIn}: {
-  transport: PhysicalTransport; onTransport: (value: PhysicalTransport) => void; onSignIn: () => void;
+export default function PhysicalLab({transport, onTransport, onSignIn, onDemo}: {
+  transport: PhysicalTransport; onTransport: (value: PhysicalTransport) => void; onSignIn: () => void; onDemo: (fills:number[]) => void;
 }) {
   const wifi = transport === 'wifi';
+  const [demoMode,setDemoMode]=useState(false);
+  const [demoFills,setDemoFills]=useState([25,50,70,90]);
   const [thresholds, setThresholds] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(thresholdKey) ?? '{}');
@@ -90,6 +92,11 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
       clearInterval(tick);
     };
   }, []);
+  if(demoMode) return <>
+    <section className="physical-banner"><div><span className="eyebrow">DEMO · SIMULATED</span><h3>Sensor-free demo simulator</h3><p>Virtual values only. No physical telemetry is written.</p></div><button onClick={()=>setDemoMode(false)}>Return to live readings</button></section>
+    <div className="physical-grid">{demoFills.map((fill,i)=>{const id=`BIN-00${i+1}`, t=thresholds[id]??thresholdDefaults, urgency=status(fill,{...defaults,pickupThreshold:t.pickup,urgentThreshold:t.urgent},false);return <section className="panel bin-gauge" key={id}><b>{id} · DEMO</b><p style={{color:urgency==='URGENT'?'#b83131':urgency==='COLLECTION_NEEDED'?'#a65d00':'#137750'}}>{fill}% · {urgency.replace('_',' ')}</p><label>Simulated fill <input type="range" min="0" max="100" value={fill} aria-label={`${id} simulated fill`} onChange={e=>setDemoFills(current=>current.map((v,n)=>n===i?Number(e.target.value):v))}/></label></section>})}</div>
+    <section className="panel"><h3>Demo dispatch snapshot</h3><p>Explicitly load these values into a TEST showcase snapshot. The other six bins remain virtual; collection and analytics are simulated.</p><button onClick={()=>onDemo(demoFills)}>Use demo values in simulation</button></section>
+  </>;
   return (
     <>
       <section className="physical-banner">
@@ -115,11 +122,12 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
           <RefreshCw size={16} />
           {loading ? "Checking…" : "Refresh"}
         </button>
+        <button onClick={()=>setDemoMode(true)}>Open demo simulator</button>
         <a className="workspace-jump" href="#iot-showcase">Go to 10-bin showcase ↓</a>
       </section>
       {wifi && <section className="panel lab-wifi-status" aria-label="Cloud connection status" role="status">
         <b>{fixture ? 'Wi-Fi · TEST fixture feed' : 'Automatic Wi-Fi monitoring'}</b>
-        <p>{error ? 'Connection unavailable' : loading && bins.length === 0 ? 'Connecting to Wi-Fi readings…' : bins.length === 0 ? 'Offline · waiting for the first batch' : cloudReadingAge(bins[0], now) > 120000 ? 'Offline · no recent sample' : cloudReadingAge(bins[0], now) > cloudStaleMs ? 'Stale · waiting for a fresh batch' : `Connected · receiving live Wi-Fi readings · Fresh valid channels: ${bins.filter(b=>b.status==='VALID' && cloudReadingAge(b,now)<=cloudStaleMs).length}/4`}</p>
+        <p>{error ? 'Connection unavailable' : loading && bins.length === 0 ? 'Connecting to Wi-Fi readings…' : bins.length === 0 ? 'Offline · waiting for the first batch' : cloudReadingAge(bins[0], now) > 120000 ? 'Offline · no recent sample' : cloudReadingAge(bins[0], now) > cloudStaleMs ? 'Stale · waiting for a fresh batch' : fixture ? 'TEST fixture feed · not live physical telemetry' : `Connected · receiving live Wi-Fi readings · Fresh valid channels: ${bins.filter(b=>b.status==='VALID' && cloudReadingAge(b,now)<=cloudStaleMs).length}/4`}</p>
         <small>Reading age is the time since the last device sample. It rises between updates and resets when a new sample arrives.</small>
         {error.includes('Sign in') && <button onClick={onSignIn}>Sign in to view readings</button>}
       </section>}
@@ -195,18 +203,18 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
                 <dd>{b?.deviceId ?? "Not configured"}</dd>
                 <dt>Reading age</dt><dd>{b?.receivedAt ? `${Math.max(0,Math.round((now-Date.parse(b.receivedAt))/1000))} seconds` : 'Unknown'}</dd>
               </dl>
-              {local && b && <>
-                <p className="small">{b.reason}{b.lastValid ? ` · Last valid distance: ${b.lastValid.distanceCm.toFixed(2)} cm (${new Date(b.lastValid.receivedAt).toLocaleTimeString()})` : ''}</p>
+              {(local || wifi) && b && <>
+                {local && <p className="small">{b.reason}{b.lastValid ? ` · Last valid distance: ${b.lastValid.distanceCm.toFixed(2)} cm (${new Date(b.lastValid.receivedAt).toLocaleTimeString()})` : ''}</p>}
                 <details className="lab-calibration" aria-label={`${id} individual calibration`}>
                   <summary>Individual calibration · {id}</summary>
-                  <p>Enter the usable fill range and the sensor-to-full distance, not the physical bin height or mounting depth. The 2 cm full threshold is provisional until verified.</p>
-                  <form onInput={e=>{const f=new FormData(e.currentTarget), depth=Number(f.get('depth')), offset=Number(f.get('offset')); setDraftCalibration(current=>({...current,[id]:{empty:depth+offset,depth}}));}} onSubmit={async e=>{
-                    e.preventDefault(); const f=new FormData(e.currentTarget), depth=Number(f.get('depth')), offset=Number(f.get('offset'));
-                    if(!Number.isFinite(depth)||!Number.isFinite(offset)||depth<=0||offset<2||depth+offset>400){setFeedback(`${id}: enter a positive dustbin height and a sensor offset of at least 2 cm; total must not exceed 400 cm.`);return;}
+                  <p>Enter the measured sensor-to-bottom empty distance and the sensor-to-full distance. The 2 cm full threshold is provisional until verified.</p>
+                  <form onInput={e=>{const f=new FormData(e.currentTarget), empty=Number(f.get('empty')), offset=Number(f.get('offset')); setDraftCalibration(current=>({...current,[id]:{empty,depth:empty-offset}}));}} onSubmit={async e=>{
+                    e.preventDefault(); const f=new FormData(e.currentTarget), empty=Number(f.get('empty')), offset=Number(f.get('offset')), depth=empty-offset;
+                    if(!Number.isFinite(empty)||!Number.isFinite(offset)||depth<=0||offset<2||empty>400){setFeedback(`${id}: empty must exceed full; full must be at least 2 cm and empty at most 400 cm.`);return;}
                     setFeedback(`${id}: Saving calibration…`);
-                    try {const r=await fetch(`/api/physical/calibration/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({emptyDistanceCm:depth+offset,usableDepthCm:depth})});const result=await r.json();if(!r.ok)throw Error(result.error??'Calibration could not be saved');setFeedback(`${id}: calibration saved. Fill will be calculated from subsequent readings.`);setDraftCalibration(current=>{const next={...current};delete next[id];return next;});await refresh();}catch(err){setFeedback(`${id}: ${err instanceof Error?err.message:String(err)}`);}
+                    try {let csrf='';if(wifi){const session=await fetch('/api/session',{cache:'no-store'});if(!session.ok)throw Error('Sign in under Cities → Municipal database first.');csrf=(await session.json()).data.csrf;}const r=await fetch(wifi?`/api/telemetry/calibration/${id}`:`/api/physical/calibration/${id}`,{method:'PUT',headers:{'Content-Type':'application/json',...(wifi?{'X-CSRF-Token':csrf}:{})},body:JSON.stringify({emptyDistanceCm:empty,usableDepthCm:depth})});const result=await r.json();if(!r.ok)throw Error(typeof result.error==='string'?result.error:result.error?.message??'Calibration could not be saved');setFeedback(`${id}: calibration saved.`);setDraftCalibration(current=>{const next={...current};delete next[id];return next;});await refresh();}catch(err){setFeedback(`${id}: ${err instanceof Error?err.message:String(err)}`);}
                   }}>
-                    <label>Usable fill range (cm)<input name="depth" aria-label={`${id} dustbin height`} type="number" min="0.01" max="398" step="any" required defaultValue={b.calibration?.usableDepthCm}/></label>
+                    <label>Sensor-to-bottom empty distance (cm)<input name="empty" aria-label={`${id} empty distance`} type="number" min="2.01" max="400" step="any" required defaultValue={b.calibration?.emptyDistanceCm}/></label>
                     <label>Sensor-to-full distance (cm)<input name="offset" aria-label={`${id} sensor offset`} type="number" min="2" max="399.99" step="any" required defaultValue={b.calibration ? Number((b.calibration.emptyDistanceCm-b.calibration.usableDepthCm).toFixed(2)) : undefined}/></label>
                     <button>Save {id} calibration</button><p role="status">{feedback.startsWith(id)?feedback:''}</p>
                   </form>

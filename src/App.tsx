@@ -1,6 +1,6 @@
 import ShowcasePanel from './components/ShowcasePanel';
 import DatabaseWorkspace,{type StoredCity} from './components/DatabaseWorkspace';
-import {showcaseCity} from './core/showcase';
+import {showcaseCity,captureSnapshot,testReadings} from './core/showcase';
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -1012,7 +1012,7 @@ export default function App() {
           {!physical && city.showcase && <p role="status">{city.showcaseSnapshot?.mode==='TEST'?'TEST FIXTURE':city.showcaseSnapshot?'PHYSICAL-DERIVED':'UNCAPTURED'} showcase inputs · truck collection is simulated. Manage snapshots in Physical IoT Lab.</p>}
           {physical ? (
             <>
-            <PhysicalLab key={physicalTransport} transport={physicalTransport} onTransport={value=>{setPhysicalTransport(value);try{localStorage.setItem('cleancity.physical.source',value);}catch{/* The selection remains active for this session. */}}} onSignIn={()=>navigate('Cities','municipal-database')} />
+            <PhysicalLab key={physicalTransport} transport={physicalTransport} onTransport={value=>{setPhysicalTransport(value);try{localStorage.setItem('cleancity.physical.source',value);}catch{/* The selection remains active for this session. */}}} onSignIn={()=>navigate('Cities','municipal-database')} onDemo={fills=>{const input=testReadings();input.bins.forEach((bin,i)=>{bin.fillPercent=fills[i];bin.distanceCm=16-12*fills[i]/100;});load(captureSnapshot(showcaseCity(),input,'TEST'),false,'Collection Simulator');}} />
             <section className="panel iot-showcase-workspace" id="iot-showcase" tabIndex={-1} aria-label="IoT showcase dashboard">
               <h2>10-bin showcase dashboard</h2>
               <p>Prepare a physical-derived or explicitly TEST planning snapshot here, then continue to the existing municipal collection workspaces.</p>

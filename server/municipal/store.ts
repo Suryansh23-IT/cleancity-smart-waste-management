@@ -8,6 +8,7 @@ export interface ArchiveRecord {_id:string;workspaceId:string;kind:'scenario'|'r
 export interface MunicipalStore {
  telemetry?: TelemetryStore;
  ready():Promise<void>;
+ loginAttempt?(workspace:string,now:number,client?:string):Promise<boolean>;
  session(tokenHash:string):Promise<SessionRecord|null>;
  createSession(session:SessionRecord):Promise<void>;
  deleteSession(tokenHash:string):Promise<void>;
@@ -32,6 +33,14 @@ export function mongoStore(uri:string,database:string):MunicipalStore {
  })();
  const cities=async()=>(await client()).db(database).collection<CityRecord>('cities');
  const sessions=async()=>(await client()).db(database).collection<SessionRecord>('sessions');
+ let limiterOpening:Promise<Collection<{_id:string;count:number;expiresAt:Date}>>|undefined;
+ const loginLimits=()=>limiterOpening??=(async()=>{const c=(await client()).db(database).collection<{_id:string;count:number;expiresAt:Date}>('login_rate_limits');await c.createIndex({expiresAt:1},{expireAfterSeconds:0});return c;})().catch(error=>{limiterOpening=undefined;throw error;});
+ let calibrationOpening: Promise<Collection<{workspaceId:string;deviceId:string;binId:string;calibration:import('./cloudTelemetry').Calibration}>> | undefined;
+ const calibrations = () => calibrationOpening ??= (async () => {
+  const collection=(await client()).db(database).collection<{workspaceId:string;deviceId:string;binId:string;calibration:import('./cloudTelemetry').Calibration}>('iot_calibrations');
+  await collection.createIndex({workspaceId:1,deviceId:1,binId:1},{unique:true});
+  return collection;
+ })().catch(error=>{calibrationOpening=undefined;throw error;});
  let telemetryOpening: Promise<Collection<TelemetryBatch>> | undefined;
  const telemetry = () => telemetryOpening ??= (async () => {
   const readings = (await client()).db(database).collection<TelemetryBatch>('iot_observations');
@@ -41,7 +50,20 @@ export function mongoStore(uri:string,database:string):MunicipalStore {
   return readings;
  })().catch(error => { telemetryOpening = undefined; throw error; });
  return {
+  async loginAttempt(workspace,now,client='fixture'){
+   const windowMs=15*60*1000, bucket=Math.floor(now/windowMs), id=`${workspace}:${client}:${bucket}`;
+   const collection=await loginLimits();
+   const row=await collection.findOneAndUpdate({_id:id},{$inc:{count:1},$setOnInsert:{expiresAt:new Date((bucket+2)*windowMs)}},{upsert:true,returnDocument:'after'});
+   return !!row && row.count<=8;
+  },
   telemetry: {
+   async getCalibrations(workspaceId, deviceId) {
+    const rows = await (await calibrations()).find({workspaceId,deviceId}).toArray();
+    return Object.fromEntries(rows.map(row => [row.binId,row.calibration]));
+   },
+   async setCalibration(workspaceId, deviceId, binId, calibration) {
+    await (await calibrations()).updateOne({workspaceId,deviceId,binId},{$set:{calibration}},{upsert:true});
+   },
    async save(batch) {
     const readings = await telemetry();
     try { await readings.insertOne(batch); return 'stored'; }
