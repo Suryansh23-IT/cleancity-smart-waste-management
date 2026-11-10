@@ -76,3 +76,44 @@ The showcase has more graph nodes than the 50-bin preset. The short post-GC samp
 - **F3 hosting:** Local production preview is verified. Actual hosting-runtime qualification, shared login limits, cross-engine/device checks and sustained browser profiling remain open.
 - **F4 physical:** Mount the four bins, verify electrical safety and measured calibration, then run a live sensor-driven collection demonstration. This audit uses TEST fixtures.
 - **Deployment:** Release remains blocked on these acceptance gates. See [production release checklist](production-release-checklist.md). Changes remain uncommitted.
+
+## Physical Lab per-bin alerts (2026-11-10)
+- Software: each bin has browser-local 70%/90% default alert levels, editable independently; height inputs map to existing empty-distance and usable-depth calibration. Simulator thresholds remain separate.
+- Browser/USB: Lab showed four fresh COM8 channels and the distance guide for the previously saved 25 cm / 20 cm settings. These values are not confirmed mounted-bin measurements.
+- Atlas/cloud: no new verification. Physical: mounted measurements, calibration accuracy and repeatability remain pending.
+
+- Lab UI follow-up: individual calibration stays visible, alert and history sections are compact; browser showed four fresh USB channels with previously assumed 25 cm / 2 cm settings. Build and focused Lab tests passed. This is not mounted calibration acceptance; no cloud check was performed.
+
+## Local Wi-Fi preparation (2026-11-10)
+- Software: ingest-only LAN TLS gateway added; certificate/IP verification, invalid-token 401 and authorized malformed-payload 422 verified. ESP32 Dev Module firmware compiled with local settings; USB hardware was not accessed.
+- Atlas: development ping failed with MongoServerSelectionError and TLS alert internal error. No TEST ingestion or browser Wi-Fi snapshot was verified.
+- Network: laptop Wi-Fi did not match firmware hotspot SSID; firewall rule creation was denied by Windows. Client isolation and ESP32 connectivity are unverified. Gateway IP/certificate must be refreshed after network changes.
+- Physical: no device flash or powered test; Echo level shifting still requires physical confirmation. Cloud/hosted: not tested.
+
+- Follow-up verification: local API health HTTP 200, database readiness HTTP 503. HTTPS valid-token malformed payload returned 422 and invalid-token returned 401; hostname mismatch was rejected. TypeScript/build passed; six focused telemetry/Lab/USB test files passed (56 tests), and four routing/analytics files passed (43 tests). Firmware compiled for ESP32 Dev Module. Frontend is available at the configured operator origin on port 5182; authenticated Wi-Fi browser workflow remains blocked on Atlas.
+
+- Local Wi-Fi recheck: active Wi-Fi IPv4 remains the then-active hotspot address and gateway TLS plus invalid-device 401 passed locally. Windows active SSID does not match the firmware-configured SSID; no remote-client isolation check is possible without a second connected client. No firewall rule exists. Development Atlas still reports MongoServerSelectionError with TLS internal-error alerts; no new TEST or physical/cloud evidence.
+
+- Local Wi-Fi follow-up: active 2.4 GHz adapter matched the supplied hotspot; firmware SSID typo corrected privately and firmware recompiled. Development Atlas current public /32 was absent from the allowlist; a single /32 was added and API readiness returned 200. Isolated TEST ingestion returned 201, duplicate 200, and read-back returned one TEST batch with four channels. Firewall rule still requires Windows administrator execution. Hardware, client isolation and actual Wi-Fi readings remain unverified.
+
+- Real local Wi-Fi check: user confirmed electrical protection and approved upload; ESP32-D0WD-V3 rev 3.1 on COM8 flashed and hash verified. Fresh Atlas device batch contained four VALID physical channels; USB receiver also showed four VALID channels after reconnect. Lab Wi-Fi display awaits operator sign-in. Calibration values remain assumed; unplugged charger operation and Wi-Fi loss/reconnect remain untested.
+
+- Browser physical evidence: authenticated local Wi-Fi Lab displayed four fresh VALID distance readings from device-cleancity-local, backed by Atlas. Cloud calibration was not configured, so fill percentages remained unavailable; USB calibration is separate. Charger-only operation and Wi-Fi disconnect/reconnect remain untested.
+
+- Wi-Fi Lab usability: selected source is remembered in this browser; live uncalibrated distances are prominent and connection state is explicit. Browser showed four fresh physical Wi-Fi distances; no percentage was inferred without server calibration. TypeScript/build and focused UI tests passed. Physical mounted calibration and reconnect tests remain pending.
+
+- Wi-Fi freshness UI: Lab polling reduced to five seconds and status now shows fresh valid channel count plus sample-age explanation. Browser observed 4/4 valid channels and advancing real Wi-Fi timestamps; age naturally increased between updates. Build and focused UI tests passed. Mounted calibration, charger-only and reconnect acceptance remain pending.
+
+- Local Wi-Fi calibration: at user request the assumed 27 cm empty distance / 25 cm usable depth (2 cm full gap) was configured for all four Wi-Fi channels. After API restart, browser showed four fresh physical readings with calculated percentages. Values are assumptions, not verified mounted measurements; USB calibration remains separate. UI changes passed focused tests.
+
+## Deployment readiness recheck (2026-11-10)
+- Software: TypeScript and production build passed; full suite passed 184 tests with one opt-in disposable Atlas test skipped (15-second per-test timeout). Local gateway TLS/auth and four-channel real local Wi-Fi/Atlas/Lab evidence are recorded above; dedicated gateway regression coverage remains pending.
+- Atlas: development ping and isolated TEST write/read/duplicate passed; hosted runtime access and production credentials have not been verified.
+- Browser: authenticated local Wi-Fi Lab displayed four fresh real readings; no new hosted browser acceptance was performed.
+- Physical: mounted calibration/accuracy and repeatability, charger-only operation, disconnect/reconnect and final showcase remain pending; 27/25/2 values are assumptions.
+- Release: preview health/readiness and protection policy, hosted rate rules, production configuration, recovery and explicit deployment approval remain open. No deployment or push performed.
+
+## Charger-only Wi-Fi check (2026-11-10)
+- Physical power: user reported the ESP32 connected to its verified USB charger with laptop USB disconnected. USB receiver reported disconnected and previous COM8 was absent; no power wiring was inspected remotely.
+- Wi-Fi/Atlas: after the user confirmed charger power, three new non-TEST device batches arrived at 10:58:25, 10:58:35 and 10:58:45 UTC, each containing VALID BIN-001 through BIN-004; sampled timestamps advanced. Authenticated Lab showed Wi-Fi source, 4/4 fresh channels and an advancing 10:58:45 UTC receipt.
+- Scope: charger-only Wi-Fi delivery passed this observation; assumed calibration values, mounted-bin accuracy/repeatability, longer-duration stability and Wi-Fi outage/reconnect remain separate acceptance gates.

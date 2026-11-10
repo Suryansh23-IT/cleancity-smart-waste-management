@@ -1,12 +1,26 @@
 import SerialConnection from './SerialConnection';
 import { useEffect, useRef, useState } from "react";
 import { Radio, RefreshCw, AlertTriangle } from "lucide-react";
-import { status } from "../core/model";
+import { defaults, status } from "../core/model";
 import { PhysicalBin, parsePhysical, staleReading, physicalEndpoint, cloudReadingAge, cloudStaleMs, type PhysicalTransport } from "../core/physical";
+type LabThresholds = {pickup:number; urgent:number};
+const thresholdDefaults: LabThresholds = {pickup:70, urgent:90};
+const thresholdKey = 'cleancity.lab.binThresholds';
+function validThresholds(value: LabThresholds) {
+  return Number.isFinite(value?.pickup) && Number.isFinite(value?.urgent) && value.pickup >= 1 && value.pickup < value.urgent && value.urgent <= 100;
+}
 export default function PhysicalLab({transport, onTransport, onSignIn}: {
   transport: PhysicalTransport; onTransport: (value: PhysicalTransport) => void; onSignIn: () => void;
 }) {
   const wifi = transport === 'wifi';
+  const [thresholds, setThresholds] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(thresholdKey) ?? '{}');
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) return Object.fromEntries(Object.entries(saved).filter(([id, value]) => /^BIN-00[1-4]$/.test(id) && validThresholds(value as LabThresholds))) as Record<string, LabThresholds>;
+    } catch { /* Use defaults when local preferences are unavailable. */ }
+    return {} as Record<string, LabThresholds>;
+  });
+  const [draftCalibration, setDraftCalibration] = useState<Record<string,{empty:number;depth:number}>>({});
   const usbAvailable = ['localhost','127.0.0.1','[::1]'].includes(location.hostname);
   const [fixture, setFixture] = useState(false);
   const [bins, setBins] = useState<PhysicalBin[]>([]),
@@ -67,7 +81,7 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
     const controller = new AbortController();
     refresh(controller.signal);
     const tick = setInterval(() => setNow(Date.now()), 1000);
-    const interval = setInterval(() => refresh(controller.signal), wifi ? 10000 : 1000);
+    const interval = setInterval(() => refresh(controller.signal), wifi ? 5000 : 1000);
     return () => {
       controller.abort();
       requestVersion.current++;
@@ -103,10 +117,11 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
         </button>
         <a className="workspace-jump" href="#iot-showcase">Go to 10-bin showcase ↓</a>
       </section>
-      {wifi && <section className="panel" aria-label="Cloud connection status">
-        <b>{fixture ? 'Wi-Fi · TEST fixture feed' : 'Wi-Fi telemetry'}</b>
-        <p>{error ? 'Cloud feed unavailable' : bins.length === 0 ? 'Offline · waiting for the first batch' : cloudReadingAge(bins[0], now) > 120000 ? 'Offline · no recent sample' : cloudReadingAge(bins[0], now) > cloudStaleMs ? 'Stale · waiting for a fresh batch' : 'Receiving authenticated batches'}</p>
-        <button onClick={onSignIn}>Open municipal database sign-in</button>
+      {wifi && <section className="panel lab-wifi-status" aria-label="Cloud connection status" role="status">
+        <b>{fixture ? 'Wi-Fi · TEST fixture feed' : 'Automatic Wi-Fi monitoring'}</b>
+        <p>{error ? 'Connection unavailable' : loading && bins.length === 0 ? 'Connecting to Wi-Fi readings…' : bins.length === 0 ? 'Offline · waiting for the first batch' : cloudReadingAge(bins[0], now) > 120000 ? 'Offline · no recent sample' : cloudReadingAge(bins[0], now) > cloudStaleMs ? 'Stale · waiting for a fresh batch' : `Connected · receiving live Wi-Fi readings · Fresh valid channels: ${bins.filter(b=>b.status==='VALID' && cloudReadingAge(b,now)<=cloudStaleMs).length}/4`}</p>
+        <small>Reading age is the time since the last device sample. It rises between updates and resets when a new sample arrives.</small>
+        {error.includes('Sign in') && <button onClick={onSignIn}>Sign in to view readings</button>}
       </section>}
       {!wifi && usbAvailable && <div className="lab-connection-grid">
       <SerialConnection onChange={()=>{void refresh();}}/>
@@ -123,12 +138,17 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
         </div>
       )}
       {local&&<p role="status">LOCAL PHYSICAL · Receiver {receiver?.connected?"CONNECTED":"DISCONNECTED"} · {receiver?.error??"No serial commands are sent. Other channels are distance-only until individually calibrated."}</p>}
+      <div className="lab-readings-heading"><div><span className="eyebrow">PHYSICAL SENSORS</span><h3>Live readings</h3></div><span>{wifi ? 'Wi-Fi · 4 channels' : 'USB · 4 channels'}</span></div>
+      {wifi && bins.some(b=>b.status==='VALID' && b.fillPercent===null) && <p className="lab-calibration-notice">Fill percentage and alert colours will be available after Wi-Fi calibration. Check each reading's age for freshness.</p>}
       <div className="physical-grid">
         {[1, 2, 3, 4].map((i) => {
           const id = `BIN-${String(i).padStart(3, "0")}`,
             b = bins.find((b) => b.id === id),
+            threshold = thresholds[id] ?? thresholdDefaults,
+            labSettings = {...defaults, pickupThreshold:threshold.pickup, urgentThreshold:threshold.urgent},
+            calibration = draftCalibration[id] ?? (b?.calibration ? {empty:b.calibration.emptyDistanceCm,depth:b.calibration.usableDepthCm} : null),
             stale = !!error || (wifi ? cloudReadingAge(b, now) > cloudStaleMs : local ? !receiver?.connected || !b?.receivedAt || now-Date.parse(b.receivedAt)>10000 || Date.parse(b.receivedAt)>now+5000 : staleReading(b?.receivedAt ?? null, now)),
-            s = status(b?.fillPercent ?? null, undefined, stale),
+            s = status(b?.fillPercent ?? null, labSettings, stale),
             color =
               s === "URGENT"
                 ? "#f78484"
@@ -142,7 +162,7 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
                 <span className="pill">{!b?.receivedAt ? "NO READING" : error ? "RECEIVER UNAVAILABLE" : local&&!receiver?.connected ? "DISCONNECTED" : stale ? "STALE" : b.status==="NO_ECHO" ? "NO ECHO" : b.status==="INVALID"||b.distanceCm===null ? "INVALID READING" : b.fillPercent===null ? "VALID · NOT CALIBRATED" : "RECEIVING"}</span>
               </div>
               <div
-                className="gauge"
+                className={`gauge${wifi && b?.status === 'VALID' && b.fillPercent === null ? ' gauge-distance' : ''}`}
                 style={{
                   background: `conic-gradient(${stale ? "#abb8b0" : color} ${(b?.fillPercent ?? 0) * 3.6}deg, #edf2eb 0deg)`,
                 }}
@@ -150,19 +170,19 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
                 <div>
                   <strong>
                     {b?.fillPercent === null || b?.fillPercent === undefined
-                      ? "—"
-                      : Math.round(b.fillPercent) + "%"}
+                      ? wifi && b?.status === 'VALID' && b.distanceCm !== null ? `${b.distanceCm.toFixed(1)} cm` : "—"
+                      : b.fillPercent.toFixed(1) + "%"}
                   </strong>
-                  <small>{b?.receivedAt ? stale ? "LAST RECEIVED VALUE" : local&&b.distanceCm!==null&&b.fillPercent===null ? "NOT CALIBRATED" : s : "NO VERIFIED DATA"}</small>
+                  <small>{b?.receivedAt ? stale ? "LAST RECEIVED VALUE" : b.distanceCm!==null&&b.fillPercent===null ? "DISTANCE · NOT CALIBRATED" : s === 'COLLECTION_NEEDED' ? 'COLLECTION NEEDED' : s : "NO VERIFIED DATA"}</small>
                 </div>
               </div>
               <dl>
-                <dt>Distance</dt>
+                {!(wifi && b?.status === 'VALID' && b.fillPercent === null) && <><dt>Distance</dt>
                 <dd>
                   {b?.distanceCm != null
                     ? `${b.distanceCm.toFixed(1)} cm`
                     : "—"}
-                </dd>
+                </dd></>}
                 <dt>Last received</dt>
                 <dd>
                   {b?.receivedAt
@@ -175,10 +195,36 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
                 <dd>{b?.deviceId ?? "Not configured"}</dd>
                 <dt>Reading age</dt><dd>{b?.receivedAt ? `${Math.max(0,Math.round((now-Date.parse(b.receivedAt))/1000))} seconds` : 'Unknown'}</dd>
               </dl>
-              {local&&<><p className="small">{b?.reason}{b?.lastValid?` · Last valid distance: ${b.lastValid.distanceCm.toFixed(2)} cm (${new Date(b.lastValid.receivedAt).toLocaleTimeString()})`:''}</p><details><summary>Measured calibration · this channel only</summary><p>Use measured empty distance and usable depth. Leave uncalibrated channels distance-only.</p><form onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);setFeedback(`${id}: Saving calibration…`);try{const r=await fetch(`/api/physical/calibration/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({emptyDistanceCm:Number(f.get('empty')),usableDepthCm:Number(f.get('depth'))})});const result=await r.json();if(!r.ok)throw Error(result.error??'Calibration could not be saved');setFeedback(`${id}: calibration saved. Fill will be calculated from subsequent readings.`);await refresh();}catch(err){setFeedback(`${id}: ${err instanceof Error?err.message:String(err)}`);}}}><label>Empty distance (cm)<input name="empty" aria-label={`${id} empty distance`} type="number" min="2" max="400" step="any" required defaultValue={b?.calibration?.emptyDistanceCm}/></label><label>Usable depth (cm)<input name="depth" aria-label={`${id} usable depth`} type="number" min="0.01" max="398" step="any" required defaultValue={b?.calibration?.usableDepthCm}/></label><button>Save {id} calibration</button><p role="status">{feedback.startsWith(id)?feedback:""}</p></form></details><ol aria-label={`${id} recent distance history`}>{b?.history.slice(-5).map((h,i)=><li key={i}>{new Date(h.receivedAt).toLocaleTimeString()} · {h.distanceCm!=null?`${h.distanceCm.toFixed(2)} cm`:h.status??'Unknown'}</li>)}</ol></>}
-              {b?.history.some(h=>h.fillPercent!==null)&&<p className="small">Last usable history value: {([...b.history].filter(h=>h.fillPercent!==null).sort((a,b)=>Date.parse(a.receivedAt)-Date.parse(b.receivedAt)).at(-1)?.fillPercent)?.toFixed(0)}%. This does not establish that the current reading is valid.</p>}
-              {b && b.history.length > 1 && b.history.some(h=>h.fillPercent!==null) && (
-                <>
+              {local && b && <>
+                <p className="small">{b.reason}{b.lastValid ? ` · Last valid distance: ${b.lastValid.distanceCm.toFixed(2)} cm (${new Date(b.lastValid.receivedAt).toLocaleTimeString()})` : ''}</p>
+                <details className="lab-calibration" aria-label={`${id} individual calibration`}>
+                  <summary>Individual calibration · {id}</summary>
+                  <p>Dustbin height is the usable fill depth. Sensor offset is the gap from the full level to the sensor.</p>
+                  <form onInput={e=>{const f=new FormData(e.currentTarget), depth=Number(f.get('depth')), offset=Number(f.get('offset')); setDraftCalibration(current=>({...current,[id]:{empty:depth+offset,depth}}));}} onSubmit={async e=>{
+                    e.preventDefault(); const f=new FormData(e.currentTarget), depth=Number(f.get('depth')), offset=Number(f.get('offset'));
+                    if(!Number.isFinite(depth)||!Number.isFinite(offset)||depth<=0||offset<2||depth+offset>400){setFeedback(`${id}: enter a positive dustbin height and a sensor offset of at least 2 cm; total must not exceed 400 cm.`);return;}
+                    setFeedback(`${id}: Saving calibration…`);
+                    try {const r=await fetch(`/api/physical/calibration/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({emptyDistanceCm:depth+offset,usableDepthCm:depth})});const result=await r.json();if(!r.ok)throw Error(result.error??'Calibration could not be saved');setFeedback(`${id}: calibration saved. Fill will be calculated from subsequent readings.`);setDraftCalibration(current=>{const next={...current};delete next[id];return next;});await refresh();}catch(err){setFeedback(`${id}: ${err instanceof Error?err.message:String(err)}`);}
+                  }}>
+                    <label>Dustbin height (cm)<input name="depth" aria-label={`${id} dustbin height`} type="number" min="0.01" max="398" step="any" required defaultValue={b.calibration?.usableDepthCm}/></label>
+                    <label>IoT sensor offset (cm)<input name="offset" aria-label={`${id} sensor offset`} type="number" min="2" max="399.99" step="any" required defaultValue={b.calibration ? Number((b.calibration.emptyDistanceCm-b.calibration.usableDepthCm).toFixed(2)) : undefined}/></label>
+                    <button>Save {id} calibration</button><p role="status">{feedback.startsWith(id)?feedback:''}</p>
+                  </form>
+                </details>
+              </>}
+              <details className="lab-thresholds"><summary>Alert levels · {threshold.pickup}% orange / {threshold.urgent}% red</summary>
+                <p>Set alert levels for {id}. These do not change its fill calculation.</p>
+                <form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget), next={pickup:Number(f.get('pickup')),urgent:Number(f.get('urgent'))};if(!validThresholds(next)){setFeedback(`${id}: orange must be at least 1% and below red, with red at most 100%.`);return;}const updated={...thresholds,[id]:next};setThresholds(updated);try{localStorage.setItem(thresholdKey,JSON.stringify(updated));setFeedback(`${id}: alert levels saved in this browser.`);}catch{setFeedback(`${id}: alert levels applied for this session; browser storage unavailable.`);}}}>
+                  <label>Orange · collection (%)<input aria-label={`${id} orange threshold`} name="pickup" type="number" min="1" max="99" step="any" required defaultValue={threshold.pickup}/></label>
+                  <label>Red · urgent (%)<input aria-label={`${id} red threshold`} name="urgent" type="number" min="2" max="100" step="any" required defaultValue={threshold.urgent}/></label>
+                  <button>Save {id} alert levels</button><p role="status">{feedback.startsWith(id)?feedback:''}</p>
+                </form>
+              </details>
+              {calibration && Number.isFinite(calibration.empty) && Number.isFinite(calibration.depth) && calibration.depth>0 && calibration.empty-calibration.depth>=2 && <div className="lab-distance-guide"><b>{draftCalibration[id] ? 'Calibration preview · save to apply' : 'Distance guide'}</b><p>Empty distance: {calibration.empty.toFixed(1)} cm · full distance: {(calibration.empty-calibration.depth).toFixed(1)} cm</p><p>🟠 {threshold.pickup}%: {(calibration.empty-calibration.depth*threshold.pickup/100).toFixed(1)} cm or closer<br/>🔴 {threshold.urgent}%: {(calibration.empty-calibration.depth*threshold.urgent/100).toFixed(1)} cm or closer</p><small>Fill = (dustbin height + sensor offset − measured distance) ÷ dustbin height.</small></div>}
+              {b && b.history.length > 0 && <details className="lab-history"><summary>Recent readings &amp; history</summary>
+                {local && <ol aria-label={`${id} recent distance history`}>{b.history.slice(-5).map((h,i)=><li key={i}>{new Date(h.receivedAt).toLocaleTimeString()} · {h.distanceCm!=null?`${h.distanceCm.toFixed(2)} cm`:h.status??'Unknown'}</li>)}</ol>}
+                {b.history.some(h=>h.fillPercent!==null)&&<p className="small">Last usable history value: {([...b.history].filter(h=>h.fillPercent!==null).sort((a,b)=>Date.parse(a.receivedAt)-Date.parse(b.receivedAt)).at(-1)?.fillPercent)?.toFixed(0)}%. This does not establish that the current reading is valid.</p>}
+                {b.history.length > 1 && b.history.some(h=>h.fillPercent!==null) && <>
                   <h4>Recent physical fill history</h4>
                   <svg
                     role="img"
@@ -199,8 +245,8 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
                         .join(" ")}
                     />
                   </svg>
-                </>
-              )}
+                </>}
+              </details>}
             </section>
           );
         })}
@@ -212,17 +258,17 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
           .filter(
             (b) =>
               b.fillPercent === null ||
-              b.fillPercent >= 80 ||
+              b.fillPercent >= (thresholds[b.id] ?? thresholdDefaults).pickup ||
             (wifi ? cloudReadingAge(b, now) > cloudStaleMs : staleReading(b.receivedAt, now)),
           )
           .map((b) => (
             <p key={b.id}>
               {b.id}:{" "}
-              {status(
+              {b.fillPercent === null && b.status === 'VALID' && !error && !(wifi ? cloudReadingAge(b, now) > cloudStaleMs : staleReading(b.receivedAt, now)) ? 'NOT CALIBRATED' : status(
                 b.fillPercent,
-                undefined,
+                {...defaults, pickupThreshold:(thresholds[b.id] ?? thresholdDefaults).pickup, urgentThreshold:(thresholds[b.id] ?? thresholdDefaults).urgent},
                 !!error || (wifi ? cloudReadingAge(b, now) > cloudStaleMs : staleReading(b.receivedAt, now)),
-              )}
+              ).replace('_', ' ')}
             </p>
           ))}
         {!bins.length && (
@@ -232,7 +278,7 @@ export default function PhysicalLab({transport, onTransport, onSignIn}: {
           </p>
         )}
         <p className="small">
-          Last successful API check: {checked ?? "None"} · {wifi ? 'Poll interval 10 seconds · stale after 45 seconds · offline after 2 minutes.' : 'Poll interval 1 second · local stale threshold 10 seconds.'}
+          Last successful API check: {checked ?? "None"} · {wifi ? 'Poll interval 5 seconds · stale after 45 seconds · offline after 2 minutes.' : 'Poll interval 1 second · local stale threshold 10 seconds.'}
         </p>
       </section>
       <section className="panel"><h3>Physical evidence</h3><p>The four-channel local pipeline was demonstrated previously. Final mounted-bin calibration, electrical checks and repeatability remain separate acceptance tasks. Preserve the tested firmware and wiring; never apply 5V Echo directly to ESP32 GPIO.</p></section>

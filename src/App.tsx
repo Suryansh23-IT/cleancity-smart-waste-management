@@ -94,8 +94,10 @@ const money = (v: number) =>
   }).format(v);
 const fixed = (n: number) => n.toFixed(2);
 export default function App() {
-  const [physicalTransport, setPhysicalTransport] = useState<PhysicalTransport>(() =>
-    ['localhost','127.0.0.1','[::1]'].includes(location.hostname) ? 'usb' : 'wifi');
+  const [physicalTransport, setPhysicalTransport] = useState<PhysicalTransport>(() => {
+    try { const saved=localStorage.getItem('cleancity.physical.source'); if(saved==='wifi')return 'wifi'; if(saved==='usb' && ['localhost','127.0.0.1','[::1]'].includes(location.hostname))return 'usb'; } catch { /* Use the default source. */ }
+    return ['localhost','127.0.0.1','[::1]'].includes(location.hostname) ? 'usb' : 'wifi';
+  });
   const [databaseSelection,setDatabaseSelection]=useState<StoredCity|null>(null);
   const [initial] = useState(() => {
     try {
@@ -1010,7 +1012,7 @@ export default function App() {
           {!physical && city.showcase && <p role="status">{city.showcaseSnapshot?.mode==='TEST'?'TEST FIXTURE':city.showcaseSnapshot?'PHYSICAL-DERIVED':'UNCAPTURED'} showcase inputs · truck collection is simulated. Manage snapshots in Physical IoT Lab.</p>}
           {physical ? (
             <>
-            <PhysicalLab key={physicalTransport} transport={physicalTransport} onTransport={setPhysicalTransport} onSignIn={()=>navigate('Cities','municipal-database')} />
+            <PhysicalLab key={physicalTransport} transport={physicalTransport} onTransport={value=>{setPhysicalTransport(value);try{localStorage.setItem('cleancity.physical.source',value);}catch{/* The selection remains active for this session. */}}} onSignIn={()=>navigate('Cities','municipal-database')} />
             <section className="panel iot-showcase-workspace" id="iot-showcase" tabIndex={-1} aria-label="IoT showcase dashboard">
               <h2>10-bin showcase dashboard</h2>
               <p>Prepare a physical-derived or explicitly TEST planning snapshot here, then continue to the existing municipal collection workspaces.</p>

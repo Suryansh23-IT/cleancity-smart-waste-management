@@ -105,11 +105,50 @@
 .lab-connection-grid { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(225px,1fr); gap:14px; margin-bottom:14px; }
 .lab-connection-grid > .panel { margin:0; }
 .lab-connection-grid > [aria-label="Automatic USB connection status"] { background:#f2f8f3; }
+.lab-theme .lab-wifi-status { margin-bottom:14px; background:#f2f8f3; }
+.lab-theme .lab-wifi-status p { margin:6px 0; }
+.lab-theme .lab-wifi-status small { color:#566d60; line-height:1.5; }
 .serial-controls { display:flex; align-items:flex-end; gap:8px; flex-wrap:wrap; }
 .serial-controls label { flex:1 1 150px; min-width:0; }
 .serial-controls select { width:100%; min-height:41px; }
-.lab-theme .bin-gauge .section-heading { align-items:flex-start; flex-wrap:wrap; gap:6px; }
+.lab-theme .physical-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; align-items:start; }
+.lab-theme .bin-gauge { min-width:0; padding:20px; box-shadow:0 2px 10px rgba(28,64,43,.04); }
+.lab-theme .bin-gauge .section-heading { align-items:center; flex-wrap:wrap; gap:8px; }
+.lab-theme .bin-gauge .section-heading b { font-size:15px; color:#244637; }
+.lab-theme .bin-gauge .gauge { width:132px; height:132px; margin:16px auto; }
+.lab-theme .bin-gauge .gauge strong { font-size:30px; font-weight:650; font-variant-numeric:tabular-nums; }
+.lab-theme .bin-gauge .gauge small { max-width:94px; font-size:9px; text-align:center; line-height:1.25; white-space:normal; }
+.lab-theme .lab-readings-heading { display:flex; align-items:end; justify-content:space-between; gap:12px; margin:25px 0 12px; }
+.lab-theme .lab-readings-heading h3 { margin:4px 0 0; color:#244637; font-size:20px; }
+.lab-theme .lab-readings-heading > span { color:#607a68; font-size:12px; font-weight:600; }
+.lab-theme .lab-calibration-notice { margin:0 0 14px; padding:10px 14px; border:1px solid #d9e7da; border-radius:10px; background:#f6faf6; color:#496554; font-size:13px; }
+.lab-theme .bin-gauge .gauge-distance { width:auto; height:auto; min-height:116px; padding:0; margin:16px 0 12px; border:1px solid #dcebe0; border-radius:12px; background:#f1f8f2 !important; }
+.lab-theme .bin-gauge .gauge-distance > div { min-height:114px; padding:16px; border-radius:12px; background:transparent; }
+.lab-theme .bin-gauge .gauge-distance strong { color:#28573d; font-size:32px; }
+.lab-theme .bin-gauge .gauge-distance small { color:#61786a; letter-spacing:.03em; }
+.lab-theme .bin-gauge dl { padding:12px 14px; border-radius:10px; background:#f7faf7; font-size:12px; gap:8px 12px; }
 .lab-theme .bin-gauge dd { overflow-wrap:anywhere; }
+.lab-theme .lab-thresholds { margin-top: 14px; padding: 12px; border: 1px solid #dce8dd; border-radius: 10px; background: #f8fbf8; }
+.lab-theme .lab-thresholds summary { cursor: pointer; font-weight: 700; color: #315a42; }
+.lab-theme .lab-thresholds p, .lab-theme .lab-distance-guide p { margin: 8px 0; }
+.lab-theme .lab-thresholds form { display: grid; gap: 8px; }
+.lab-theme .lab-thresholds label { display: grid; gap: 4px; }
+.lab-theme .lab-thresholds input { width: 100%; min-width: 0; }
+.lab-theme .lab-distance-guide { margin: 12px 0; padding: 12px; border-radius: 10px; background: #f2f7f3; font-size: 12px; line-height: 1.5; }
+.lab-theme .lab-calibration { margin-top:12px; padding:14px; border:1px solid #d5e6d9; border-radius:10px; background:#fbfdfb; }
+.lab-theme .lab-calibration summary { cursor:pointer; font-size:14px; font-weight:700; color:#315a42; }
+.lab-theme .lab-calibration p { margin:6px 0 10px; font-size:12px; line-height:1.5; color:#566d60; }
+.lab-theme .lab-calibration form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-items:end; }
+.lab-theme .lab-calibration label { display:grid; gap:5px; font-size:12px; font-weight:600; }
+.lab-theme .lab-calibration input { width:100%; min-width:0; min-height:40px; }
+.lab-theme .lab-calibration button { grid-column:1/-1; justify-self:start; }
+.lab-theme .lab-calibration [role=status]:not(:empty) { grid-column:1/-1; margin:0; }
+.lab-theme .lab-history { margin-top:12px; padding:10px 2px; border-top:1px solid #e4ece5; }
+.lab-theme .lab-history summary { cursor:pointer; font-weight:600; color:#426952; }
+.lab-theme .lab-history ol { padding-left:20px; line-height:1.7; font-size:12px; }
+.lab-theme .lab-history svg { width:100%; max-height:100px; }
+@media(max-width:700px) { .lab-theme .physical-grid { grid-template-columns:1fr; } }
+@media(max-width:390px) { .lab-theme .lab-calibration form { grid-template-columns:1fr; } }
 .lab-theme .iot-showcase-workspace { scroll-margin-top:85px; border-top:3px solid #458063; }
 .lab-theme .showcase-panel fieldset { min-width:0; display:flex; gap:8px; flex-wrap:wrap; padding:10px; border-color:var(--ops-line); }
 .lab-theme .showcase-panel fieldset > [role=status] { flex-basis:100%; }

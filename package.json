@@ -14,6 +14,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "iot:local": "node server/local/main.ts",
     "iot:ports": "node server/local/main.ts --list",
+    "wifi:gateway": "node --env-file=.env server/municipal/local-wifi-gateway.mjs",
     "api:dev": "tsx --env-file=.env server/municipal/main.ts",
     "auth:hash": "tsx scripts/hash-operator-password.ts",
     "test:atlas": "node --env-file=.env node_modules/vitest/vitest.mjs run server/municipal/atlas.integration.test.ts --maxWorkers=1"

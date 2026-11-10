@@ -63,10 +63,52 @@ afterEach(async () => {
 });
 
 describe("municipal UI integration (DOM, not graphical browser)", () => {
+  it('restores the selected Wi-Fi feed and displays uncalibrated live distances', async () => {
+    const at=new Date().toISOString();
+    const bin={id:'BIN-001',label:'Sensor 1',deviceId:'device-example',distanceCm:12.34,fillPercent:null,receivedAt:at,sampledAt:at,readingId:'a'.repeat(64)+':BIN-001',status:'VALID',history:[]};
+    localStorage.setItem('cleancity.physical.source','wifi');
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,headers:new Headers({'content-type':'application/json'}),json:async()=>({source:'PHYSICAL',origin:'CLOUD_WIFI',staleAfterMs:45000,bins:[bin]})}));
+    await mount(); await click('Physical IoT Lab');
+    expect(text()).toContain('Connected · receiving live Wi-Fi readings');
+    expect(container.querySelector('.bin-gauge .gauge strong')?.textContent).toBe('12.3 cm');
+    expect(text()).toContain('DISTANCE · NOT CALIBRATED');
+    expect(text()).not.toContain('Sign in to view readings');
+  });
+  it('keeps per-bin alert levels separate and derives distances from each calibration', async () => {
+    const at = new Date().toISOString();
+    const bins = [1,2].map(i => ({id:`BIN-00${i}`,label:`Sensor ${i}`,deviceId:'fixture',distanceCm:12.5,fillPercent:70,receivedAt:at,status:'VALID',calibration:{emptyDistanceCm:30,usableDepthCm:25},history:[]}));
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,headers:new Headers({'content-type':'application/json'}),json:async()=>({source:'PHYSICAL',origin:'LOCAL_USB',staleAfterMs:10000,receiver:{connected:true,error:null},bins})}));
+    await mount(); await click('Physical IoT Lab');
+    const cards=container.querySelectorAll('.bin-gauge');
+    expect(cards[0].textContent).toContain('70.0%');
+    expect(cards[0].textContent).toContain('70%: 12.5 cm');
+    expect(cards[0].textContent).toContain('90%: 7.5 cm');
+    await value(container.querySelector('[aria-label="BIN-001 orange threshold"]')!, '60');
+    await click('Save BIN-001 alert levels');
+    expect(cards[0].textContent).toContain('60% orange / 90% red');
+    expect(cards[0].textContent).toContain('60%: 15.0 cm');
+    expect(cards[1].textContent).toContain('70% orange / 90% red');
+    expect(JSON.parse(localStorage.getItem('cleancity.lab.binThresholds')!)).toEqual({'BIN-001':{pickup:60,urgent:90}});
+  });
+  it('shows individual fill depth and sensor offset and saves their sum as empty distance', async () => {
+    const at=new Date().toISOString();
+    const bins=[1,2,3,4].map(i=>({id:`BIN-00${i}`,label:`Sensor ${i}`,deviceId:'fixture',distanceCm:14.5,fillPercent:50,receivedAt:at,status:'VALID',calibration:{emptyDistanceCm:27,usableDepthCm:25},history:[]}));
+    const fetcher=vi.fn().mockImplementation((_url, options)=>options?.method==='PUT' ? Promise.resolve({ok:true,json:async()=>({})}) : Promise.resolve({ok:true,headers:new Headers({'content-type':'application/json'}),json:async()=>({source:'PHYSICAL',origin:'LOCAL_USB',staleAfterMs:10000,receiver:{connected:true,error:null},bins})}));
+    vi.stubGlobal('fetch',fetcher); await mount(); await click('Physical IoT Lab');
+    expect((container.querySelector('[aria-label="BIN-001 dustbin height"]') as HTMLInputElement).value).toBe('25');
+    expect((container.querySelector('[aria-label="BIN-001 sensor offset"]') as HTMLInputElement).value).toBe('2');
+    expect(container.querySelectorAll('[aria-label$="individual calibration"]')).toHaveLength(4);
+    await value(container.querySelector('[aria-label="BIN-001 dustbin height"]')!, '20');
+    await click('Save BIN-001 calibration');
+    const put=fetcher.mock.calls.find((call:any[])=>call[1]?.method==='PUT');
+    expect(put?.[0]).toBe('/api/physical/calibration/BIN-001');
+    expect(JSON.parse(put?.[1].body)).toEqual({emptyDistanceCm:22,usableDepthCm:20});
+    expect((container.querySelector('[aria-label="BIN-002 dustbin height"]') as HTMLInputElement).value).toBe('25');
+  });
   it('shows valid uncalibrated local distance, distance history and calibration controls',async()=>{
     const at=new Date().toISOString();
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,headers:new Headers({'content-type':'application/json'}),json:async()=>({source:'PHYSICAL',origin:'LOCAL_USB',staleAfterMs:10000,receiver:{connected:true,error:null},bins:[{id:'BIN-001',label:'TEST channel',deviceId:'TEST-fixture',distanceCm:20.22,fillPercent:null,receivedAt:at,status:'VALID',calibration:null,history:[{receivedAt:at,distanceCm:20.22,fillPercent:null,status:'VALID'}]}]})}));
-    await mount();await click('Physical IoT Lab');expect(text()).toContain('VALID · NOT CALIBRATED');expect(text()).toContain('LOCAL PHYSICAL');expect(text()).toContain('20.2 cm');expect(text()).not.toContain('INVALID READING');expect(container.querySelector('[aria-label="BIN-001 recent distance history"]')?.textContent).toContain('20.22 cm');expect(container.querySelector('[aria-label="BIN-001 empty distance"]')).not.toBeNull();
+    await mount();await click('Physical IoT Lab');expect(text()).toContain('VALID · NOT CALIBRATED');expect(text()).toContain('LOCAL PHYSICAL');expect(text()).toContain('20.2 cm');expect(text()).not.toContain('INVALID READING');expect(container.querySelector('[aria-label="BIN-001 recent distance history"]')?.textContent).toContain('20.22 cm');expect(container.querySelector('[aria-label="BIN-001 sensor offset"]')).not.toBeNull();
   });
   it('changes demo demand with one click while preserving roads zones and fleet',async()=>{
     await mount();await click('Zone & Fleet Operations');await click('Save scenario');
